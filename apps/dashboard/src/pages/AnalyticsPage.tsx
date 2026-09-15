@@ -115,6 +115,12 @@ export function AnalyticsPage() {
     (data.totalCalls > 0 ||
       data.tokensViaYusetu > 0 ||
       data.tokensIfDirect > 0);
+  const hasCatalog =
+    data != null && (data.mcpCount > 0 || data.catalogToolCount > 0);
+  const catalogExposureHint =
+    hasCatalog && data
+      ? `Meta mode exposes ~5 gateway tools vs ${formatTokens(data.catalogToolCount)} catalog tools if connected directly.`
+      : null;
 
   return (
     <div>
@@ -146,6 +152,12 @@ export function AnalyticsPage() {
             <p className="hint" style={{ marginBottom: 0 }}>
               {data.mcpCount} enabled MCP{data.mcpCount === 1 ? "" : "s"} ·{" "}
               {data.catalogToolCount} tools available
+              {catalogExposureHint ? (
+                <>
+                  <br />
+                  {catalogExposureHint}
+                </>
+              ) : null}
             </p>
           ) : (
             <p className="hint" style={{ marginBottom: 0 }}>
@@ -157,6 +169,11 @@ export function AnalyticsPage() {
 
       {data && hasUsage ? (
         <div className="stack" style={{ maxWidth: 860 }}>
+          {catalogExposureHint ? (
+            <p className="hint" style={{ margin: 0 }}>
+              {catalogExposureHint}
+            </p>
+          ) : null}
           <section className="analytics-hero analytics-hero--savings">
             <div className="analytics-hero-top">
               <p className="analytics-hero-label">Tokens saved</p>

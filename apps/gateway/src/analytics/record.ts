@@ -2,7 +2,12 @@ import { getDb } from "../db/index.js";
 import { usageEvents } from "../db/schema.js";
 import { getLogger } from "../logger.js";
 
-export type UsageEventKind = "tools_list" | "list_tools" | "tool_call";
+export type UsageEventKind =
+  | "tools_list"
+  | "list_tools"
+  | "search_tools"
+  | "get_tool"
+  | "tool_call";
 
 export type RecordUsageInput = {
   kind: UsageEventKind;

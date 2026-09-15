@@ -43,8 +43,12 @@ export type GatewayConfig = {
   publicOrigin: string | undefined;
   requireMcpAuth: boolean;
   enableMcpOauth: boolean;
-  /** flat = all tools; meta = yusetu_* meta tools (+ tiny upstreams inline) */
+  /** flat = debug only (all tools); meta = production default (yusetu_* meta tools) */
   toolPresentation: ToolPresentation;
+  /** When meta: optionally inline tiny upstream catalogs as slug__tool in tools/list. Default false. */
+  inlineTinyMcps: boolean;
+  /** When true, compress inputSchema returned by yusetu_get_tool. Default true. */
+  schemaCompression: boolean;
   logLevel: string;
   logToolArgs: LogToolArgsMode;
   dashboardDist: string;
@@ -70,6 +74,8 @@ export function loadConfig(): GatewayConfig {
     requireMcpAuth: parseBool(process.env.REQUIRE_MCP_AUTH, true),
     enableMcpOauth: parseBool(process.env.ENABLE_MCP_OAUTH, true),
     toolPresentation: parseToolPresentation(process.env.TOOL_PRESENTATION),
+    inlineTinyMcps: parseBool(process.env.INLINE_TINY_MCPS, false),
+    schemaCompression: parseBool(process.env.SCHEMA_COMPRESSION, true),
     logLevel: process.env.LOG_LEVEL?.trim() || "info",
     logToolArgs,
     dashboardDist: path.resolve(GATEWAY_ROOT, "../dashboard/dist"),

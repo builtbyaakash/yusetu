@@ -9,9 +9,15 @@ import { runtimeSnapshot } from "../mcp/snapshot.js";
  * Usage analytics aggregates all recorded events (all-time).
  * Savings = counterfactual (connect each MCP separately) minus actual gateway traffic.
  *
+ * Catalog tokensIfDirect is recorded once on tools_list (full upstream union).
+ * Secondary discovery (list_tools / search_tools / get_tool) records via tokens only
+ * so schemas are not double-counted when agents search → get_tool after tools/list.
+ *
  * Event kinds:
- * - tools_list (mcpSlug null): shared catalog discovery — counted in global totals only
- * - list_tools: per-MCP discovery
+ * - tools_list (mcpSlug null): shared catalog discovery — sole catalog ifDirect
+ * - list_tools: per-MCP discovery (yusetu_list_tools)
+ * - search_tools: cross-MCP BM25 search (yusetu_search_tools)
+ * - get_tool: single-tool descriptor fetch (yusetu_get_tool)
  * - tool_call: per-MCP invoke
  */
 export type UsageAnalyticsResponse = {
@@ -20,7 +26,7 @@ export type UsageAnalyticsResponse = {
   tokensIfDirect: number;
   tokensSaved: number;
   savingsPercent: number | null;
-  /** Discovery traffic: tools_list + list_tools (+ get_tool when recorded). */
+  /** Discovery traffic: tools_list + list_tools + search_tools + get_tool. */
   discoveryTokensVia: number;
   discoveryTokensIfDirect: number;
   /** Invoke traffic: tool_call only. */
@@ -34,7 +40,7 @@ export type UsageAnalyticsResponse = {
     calls: number;
     tokensViaYusetu: number;
     tokensIfDirect: number;
-    /** list_tools (and similar) for this MCP. */
+    /** list_tools / search_tools / get_tool (and similar) for this MCP. */
     discoveryTokensVia: number;
     discoveryTokensIfDirect: number;
     /** tool_call for this MCP. */
@@ -46,7 +52,12 @@ export type UsageAnalyticsResponse = {
 };
 
 function isDiscoveryKind(kind: string): boolean {
-  return kind === "tools_list" || kind === "list_tools";
+  return (
+    kind === "tools_list" ||
+    kind === "list_tools" ||
+    kind === "search_tools" ||
+    kind === "get_tool"
+  );
 }
 
 function emptyAgg() {

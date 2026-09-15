@@ -22,11 +22,20 @@ export function createMcpHttpHandler(
   router: ToolRouter,
   pool: UpstreamPool,
   presentation: ToolPresentation,
+  inlineTinyMcps = false,
+  schemaCompression = true,
 ) {
   const sessions = new Map<string, SessionEntry>();
   const log = getLogger("data");
 
-  const newServer = () => createFacadeServer(router, pool, presentation);
+  const newServer = () =>
+    createFacadeServer(
+      router,
+      pool,
+      presentation,
+      inlineTinyMcps,
+      schemaCompression,
+    );
 
   return async (c: Context): Promise<Response> => {
     const sessionId = c.req.header("mcp-session-id") ?? undefined;

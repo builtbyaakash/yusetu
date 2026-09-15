@@ -226,6 +226,14 @@ export function getDb(): Db {
   return dbInstance;
 }
 
+/** Raw better-sqlite3 handle (FTS5 / pragmas). */
+export function getSqlite(): Database.Database {
+  if (!sqliteInstance) {
+    throw new Error("Database not initialized");
+  }
+  return sqliteInstance;
+}
+
 export function closeDb(): void {
   sqliteInstance?.close();
   sqliteInstance = undefined;

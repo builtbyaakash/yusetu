@@ -38,7 +38,7 @@ Token savings over time:
 
 **Tool names (flat mode):** exposed as `{slug}__{toolName}` (e.g. `github__create_issue`).
 
-**Tool catalog (default `TOOL_PRESENTATION=meta`):** agents see four meta tools — `yusetu_list_mcps` → `yusetu_list_tools` (`detail=summary` by default) → `yusetu_get_tool` → `yusetu_call` — plus tools from tiny upstreams inlined as `slug__tool`. Prefer summary listing then `yusetu_get_tool` for schemas; use `query` / `ifNoneMatch` to avoid reloading catalogs. Set `TOOL_PRESENTATION=flat` for the full union.
+**Tool catalog (default `TOOL_PRESENTATION=meta`):** agents see five meta tools (BM25 `yusetu_search_tools`, schema compression on `yusetu_get_tool`, plus list/call helpers). Preferred discovery: `yusetu_search_tools` → `yusetu_get_tool` (compressed schema) → `yusetu_call`. That path typically saves **~90–95% of tool-definition / catalog tokens** vs exposing the full union of upstream schemas (not invoke payloads). `yusetu_list_mcps` / `yusetu_list_tools` (`detail=summary` by default) still exist for browsing; prefer summary listing then `yusetu_get_tool` for schemas; use `query` / `ifNoneMatch` to avoid reloading catalogs. Set `INLINE_TINY_MCPS=true` to also inline tiny upstreams as `slug__tool` in `tools/list`. `TOOL_PRESENTATION=flat` is **debug only** (full union of every `slug__tool`).
 
 **Transports:**
 
@@ -148,7 +148,7 @@ Copy live URLs and a ready-to-paste snippet from **Settings** in the dashboard.
 - **OAuth 2.1 (PKCE)** — Cursor, Claude, and other HTTP MCP clients discover the authorization server from the `401` challenge, then:
   - Protected resource metadata (PRM): `/.well-known/oauth-protected-resource`
   - Authorization server metadata: `/.well-known/oauth-authorization-server`
-- **Tool catalog** — default `TOOL_PRESENTATION=meta` exposes four gateway tools (`yusetu_list_mcps`, `yusetu_list_tools`, `yusetu_get_tool`, `yusetu_call`) plus tiny MCP catalogs inline. Set `TOOL_PRESENTATION=flat` in `.env` and restart to expose every `slug__tool` instead.
+- **Tool catalog** — default `TOOL_PRESENTATION=meta` exposes five gateway tools (`yusetu_search_tools` with BM25, `yusetu_list_mcps`, `yusetu_list_tools`, `yusetu_get_tool` with schema compression, `yusetu_call`) only. Preferred flow: search → get_tool → call; expect **~90–95% fewer tool-definition tokens** than a flat full-catalog `tools/list` (invoke payloads unchanged). list_mcps/list_tools still available. Tiny MCP inlining is off by default (`INLINE_TINY_MCPS=false`); set `INLINE_TINY_MCPS=true` to add tiny catalogs as `slug__tool`. `TOOL_PRESENTATION=flat` is **debug only** — exposes every `slug__tool`.
 
 ---
 
@@ -184,7 +184,8 @@ Copy live URLs and a ready-to-paste snippet from **Settings** in the dashboard.
 - **`GATEWAY_MASTER_KEY`** — required to store/decrypt upstream secrets. Generate with `openssl rand -base64 32`. Losing it makes existing ciphertext unreadable. Do not commit `.env`.
 - **Single-tenant** — one admin account per install; bind to `127.0.0.1` for local-only use.
 - **`REQUIRE_MCP_AUTH`** — default `true`. Requires API key or OAuth on `/mcp`. Set `false` only for trusted local experiments.
-- **`TOOL_PRESENTATION`** — `meta` (default, 4 gateway meta tools + tiny upstreams inline) or `flat` (all `slug__tool` tools).
+- **`TOOL_PRESENTATION`** — `meta` (production default, 5 gateway meta tools) or `flat` (**debug only**, all `slug__tool` tools).
+- **`INLINE_TINY_MCPS`** — when `meta`, optionally inline tiny upstream catalogs into `tools/list` (default `false`).
 - **Secrets** — never returned in plaintext after create; logs redact args unless `LOG_TOOL_ARGS` is set carefully.
 - **Stdio upstreams** — spawned without a shell (`command` + `args` only).
 - **GitHub source (v1):** `gitUrl` + `installCommand` + `command` (stdio MCPs from a git checkout; `cwd` managed by the gateway).

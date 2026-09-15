@@ -109,13 +109,19 @@ export const settings = sqliteTable("settings", {
 
 /**
  * Firehose of MCP gateway usage for analytics.
- * kinds: tools_list | list_tools | tool_call
+ * kinds: tools_list | list_tools | search_tools | get_tool | tool_call
  */
 export const usageEvents = sqliteTable("usage_events", {
   id: text("id").primaryKey(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   kind: text("kind", {
-    enum: ["tools_list", "list_tools", "tool_call"],
+    enum: [
+      "tools_list",
+      "list_tools",
+      "search_tools",
+      "get_tool",
+      "tool_call",
+    ],
   }).notNull(),
   /** Null for gateway-wide tools/list events. */
   mcpSlug: text("mcp_slug"),

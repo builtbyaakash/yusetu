@@ -3,6 +3,7 @@ import { exposedToolName } from "@yusetu/shared";
 import { getDb } from "../db/index.js";
 import { tools, upstreams } from "../db/schema.js";
 import { runtimeSnapshot, type SnapshotTool } from "./snapshot.js";
+import { rebuildToolSearchIndex } from "./tool-search.js";
 
 export function rebuildSnapshotFromDb(): void {
   const db = getDb();
@@ -40,4 +41,5 @@ export function rebuildSnapshotFromDb(): void {
   });
 
   runtimeSnapshot.swap(mapped);
+  rebuildToolSearchIndex();
 }

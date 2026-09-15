@@ -12,7 +12,6 @@ import { exposedToolName, parseExposedToolName } from "@yusetu/shared";
 import { recordUsageEvent } from "../analytics/record.js";
 import {
   estimateDirectCatalogTokens,
-  estimateDirectToolTokens,
   estimateJsonTokens,
   estimateToolDescriptorTokens,
 } from "../analytics/tokens.js";
@@ -26,12 +25,15 @@ import {
   META_GET_TOOL,
   META_LIST_MCPS,
   META_LIST_TOOLS,
+  META_SEARCH_TOOLS,
   TINY_MCP_CATALOG_TOKENS,
   TINY_MCP_TOOL_COUNT,
   metaToolDescriptors,
   type ListToolsDetail,
 } from "./meta-tools.js";
 import { runtimeSnapshot, type SnapshotTool } from "./snapshot.js";
+import { compressToolSchema } from "./schema-compress.js";
+import { searchTools } from "./tool-search.js";
 import type { UpstreamPool } from "../upstreams/pool.js";
 
 function jsonResult(data: unknown, isError = false): CallToolResult {
@@ -122,7 +124,7 @@ function estimateCallPayloadTokens(
   result: CallToolResult,
 ): number {
   // Call cost is comparable whether via gateway or direct; catalog savings
-  // are captured on tools/list and list_tools events.
+  // are captured once on tools/list (full upstream union vs meta tools).
   return estimateJsonTokens(args) + estimateJsonTokens(result.content);
 }
 
@@ -133,6 +135,9 @@ function recordToolsListUsage(listed: Tool[]): void {
     mcpSlug: null,
     toolName: null,
     tokensViaGateway: estimateListedToolsTokens(listed),
+    // Sole catalog counterfactual: connecting each MCP directly would expose
+    // the full union on tools/list. Secondary discovery (search / list_tools /
+    // get_tool) must not re-add these schemas to tokensIfDirect.
     tokensIfDirect: estimateDirectCatalogTokens(allUpstream),
   });
 }
@@ -140,28 +145,17 @@ function recordToolsListUsage(listed: Tool[]): void {
 function recordListToolsUsage(
   mcp: string,
   payload: unknown,
-  matched: SnapshotTool[],
-  opts?: { unchanged?: boolean; toolName?: string },
+  opts?: { toolName?: string },
 ): void {
   const toolName = opts?.toolName ?? META_LIST_TOOLS;
-  if (opts?.unchanged) {
-    recordUsageEvent({
-      kind: "list_tools",
-      mcpSlug: mcp,
-      toolName,
-      tokensViaGateway: estimateJsonTokens(payload),
-      tokensIfDirect: 0,
-    });
-    return;
-  }
+  // via = actual meta discovery traffic; ifDirect = 0 so we don't double-count
+  // tool definitions already attributed on tools/list.
   recordUsageEvent({
     kind: "list_tools",
     mcpSlug: mcp,
     toolName,
     tokensViaGateway: estimateJsonTokens(payload),
-    // Counterfactual: full direct descriptors for the tools that matched
-    // (not the entire slug catalog when filtered / summary / names).
-    tokensIfDirect: estimateDirectCatalogTokens(matched),
+    tokensIfDirect: 0,
   });
 }
 
@@ -185,6 +179,7 @@ function recordToolCallUsage(
 const META_TOOL_NAMES = new Set([
   META_LIST_MCPS,
   META_LIST_TOOLS,
+  META_SEARCH_TOOLS,
   META_GET_TOOL,
   META_CALL,
 ]);
@@ -194,6 +189,7 @@ async function handleMetaCall(
   args: Record<string, unknown>,
   router: ToolRouter,
   pool: UpstreamPool,
+  schemaCompression: boolean,
 ): Promise<CallToolResult> {
   if (name === META_LIST_MCPS) {
     const db = getDb();
@@ -213,8 +209,37 @@ async function handleMetaCall(
     });
     return jsonResult({
       mcps,
-      hint: "Pick one MCP, then yusetu_list_tools with { mcp, query? } (detail=summary). Tiny MCPs may already appear as slug__tool in tools/list — call those directly or via yusetu_call. Do not list tools for every MCP up front.",
+      hint: "For capability discovery prefer yusetu_search_tools { query }. Or pick one MCP → yusetu_list_tools → yusetu_get_tool → yusetu_call. Do not list tools for every MCP up front.",
     });
+  }
+
+  if (name === META_SEARCH_TOOLS) {
+    const query = String(args.query ?? "").trim();
+    if (!query) return jsonResult({ error: "query is required" }, true);
+    const mcp =
+      args.mcp !== undefined && args.mcp !== null && String(args.mcp).trim()
+        ? String(args.mcp).trim()
+        : undefined;
+    const { tools: hits, k } = searchTools({
+      query,
+      mcp,
+      k: args.k as number | undefined,
+    });
+
+    const payload = {
+      tools: hits,
+      k,
+      hint: "Use yusetu_get_tool { mcp, tool } for inputSchema, then yusetu_call. Prefer search over listing every MCP.",
+    };
+    recordUsageEvent({
+      kind: "search_tools",
+      mcpSlug: mcp ?? null,
+      toolName: META_SEARCH_TOOLS,
+      tokensViaGateway: estimateJsonTokens(payload),
+      // Catalog counterfactual lives on tools/list only — do not re-count schemas.
+      tokensIfDirect: 0,
+    });
+    return jsonResult(payload);
   }
 
   if (name === META_LIST_TOOLS) {
@@ -236,7 +261,7 @@ async function handleMetaCall(
         hash,
         toolCount: catalog.length,
       };
-      recordListToolsUsage(mcp, unchangedPayload, [], { unchanged: true });
+      recordListToolsUsage(mcp, unchangedPayload);
       return jsonResult(unchangedPayload);
     }
 
@@ -254,7 +279,7 @@ async function handleMetaCall(
         mcp,
         hash,
       };
-      recordListToolsUsage(mcp, errPayload, []);
+      recordListToolsUsage(mcp, errPayload);
       return jsonResult(errPayload, true);
     }
 
@@ -266,7 +291,7 @@ async function handleMetaCall(
       tools,
       hint: "Prefer yusetu_get_tool { mcp, tool } for inputSchema before yusetu_call. Use query to narrow; avoid detail=full unless needed.",
     };
-    recordListToolsUsage(mcp, payload, matched);
+    recordListToolsUsage(mcp, payload);
     return jsonResult(payload);
   }
 
@@ -283,21 +308,32 @@ async function handleMetaCall(
         mcp,
         tool,
       };
-      recordListToolsUsage(mcp, errPayload, [], { toolName: META_GET_TOOL });
+      recordUsageEvent({
+        kind: "get_tool",
+        mcpSlug: mcp,
+        toolName: META_GET_TOOL,
+        tokensViaGateway: estimateJsonTokens(errPayload),
+        tokensIfDirect: 0,
+      });
       return jsonResult(errPayload, true);
     }
+    const inputSchema =
+      found.inputSchema && schemaCompression
+        ? compressToolSchema(found.inputSchema)
+        : found.inputSchema;
     const payload = {
       mcp,
       tool: found.originalName,
       description: found.description,
-      inputSchema: found.inputSchema,
+      inputSchema,
     };
     recordUsageEvent({
-      kind: "list_tools",
+      kind: "get_tool",
       mcpSlug: mcp,
       toolName: META_GET_TOOL,
       tokensViaGateway: estimateJsonTokens(payload),
-      tokensIfDirect: estimateDirectToolTokens(found),
+      // Schema already in tools/list ifDirect; via still counts compressed fetch cost.
+      tokensIfDirect: 0,
     });
     return jsonResult(payload);
   }
@@ -325,13 +361,15 @@ async function handleMetaCall(
 
 /**
  * Create an MCP Server facade.
- * - flat: expose every upstream tool as slug__name
- * - meta: expose yusetu_* meta tools plus tiny upstream catalogs (token-efficient)
+ * - flat: expose every upstream tool as slug__name (debug only)
+ * - meta: expose yusetu_* meta tools; optionally inline tiny upstreams when inlineTinyMcps
  */
 export function createFacadeServer(
   router: ToolRouter,
   pool: UpstreamPool,
   presentation: ToolPresentation = "meta",
+  inlineTinyMcps = false,
+  schemaCompression = true,
 ): Server {
   const server = new Server(
     { name: "yusetu", version: VERSION },
@@ -341,21 +379,25 @@ export function createFacadeServer(
   server.setRequestHandler(ListToolsRequestSchema, async (): Promise<ListToolsResult> => {
     if (presentation === "meta") {
       const tools = [...metaToolDescriptors()];
-      const bySlug = new Map<string, SnapshotTool[]>();
-      for (const t of runtimeSnapshot.list()) {
-        const list = bySlug.get(t.slug);
-        if (list) list.push(t);
-        else bySlug.set(t.slug, [t]);
-      }
-      for (const slugTools of bySlug.values()) {
-        if (!isTinyMcpCatalog(slugTools)) continue;
-        for (const t of slugTools) {
-          tools.push(toFlatListTool(t));
+      if (inlineTinyMcps) {
+        const bySlug = new Map<string, SnapshotTool[]>();
+        for (const t of runtimeSnapshot.list()) {
+          const list = bySlug.get(t.slug);
+          if (list) list.push(t);
+          else bySlug.set(t.slug, [t]);
+        }
+        for (const slugTools of bySlug.values()) {
+          if (!isTinyMcpCatalog(slugTools)) continue;
+          for (const t of slugTools) {
+            tools.push(toFlatListTool(t));
+          }
         }
       }
       getLogger("data").info(
         {
           toolPresentation: presentation,
+          inlineTinyMcps,
+          schemaCompression,
           toolCount: tools.length,
           toolNames: tools.map((t) => t.name),
         },
@@ -385,7 +427,7 @@ export function createFacadeServer(
 
       if (presentation === "meta") {
         if (META_TOOL_NAMES.has(name)) {
-          return handleMetaCall(name, args, router, pool);
+          return handleMetaCall(name, args, router, pool, schemaCompression);
         }
         // Allow direct slug__tool calls as escape hatch — still record usage
         if (name.includes("__")) {
@@ -398,7 +440,7 @@ export function createFacadeServer(
         }
         return jsonResult(
           {
-            error: `Unknown tool "${name}". In meta mode use yusetu_list_mcps → yusetu_list_tools → yusetu_get_tool → yusetu_call (or call slug__tool if already in tools/list).`,
+            error: `Unknown tool "${name}". In meta mode use yusetu_search_tools or yusetu_list_mcps → yusetu_list_tools → yusetu_get_tool → yusetu_call.`,
           },
           true,
         );

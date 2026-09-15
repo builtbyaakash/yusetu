@@ -56,6 +56,8 @@ export function createApp(
     router,
     pool,
     config.toolPresentation,
+    config.inlineTinyMcps,
+    config.schemaCompression,
   );
 
   app.get("/api/health", createHealthHandler(pool));
