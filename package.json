@@ -1,0 +1,19 @@
+{
+  "name": "yusetu",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source MCP gateway — one endpoint, many upstream MCP servers",
+  "scripts": {
+    "dev": "bash scripts/with-node22.sh pnpm --parallel --filter @yusetu/gateway --filter @yusetu/dashboard dev",
+    "dev:gateway": "bash scripts/with-node22.sh pnpm --filter @yusetu/gateway dev",
+    "dev:dashboard": "bash scripts/with-node22.sh pnpm --filter @yusetu/dashboard dev",
+    "build": "bash scripts/with-node22.sh pnpm -r build",
+    "start": "bash scripts/with-node22.sh pnpm --filter @yusetu/gateway start",
+    "typecheck": "bash scripts/with-node22.sh pnpm -r typecheck",
+    "rebuild:native": "bash scripts/with-node22.sh pnpm rebuild better-sqlite3"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

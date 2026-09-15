@@ -1,0 +1,22 @@
+# Yusetu MCP gateway
+#
+# Required: set GATEWAY_MASTER_KEY in .env before first start
+#   openssl rand -base64 32
+#
+# Then: docker compose up --build
+
+services:
+  yusetu:
+    build: .
+    image: yusetu:local
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      YUSETU_DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

@@ -1,0 +1,47 @@
+{
+  "name": "@yusetu/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Yusetu MCP gateway — control plane HTTP API + MCP data plane",
+  "bin": {
+    "yusetu": "./dist/cli/index.js"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/cli/index.ts serve",
+    "start": "node dist/cli/index.js serve",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.1",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@yusetu/shared": "workspace:*",
+    "argon2": "^0.41.1",
+    "better-sqlite3": "^11.9.1",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.41.0",
+    "hono": "^4.7.5",
+    "pino": "^9.6.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.13.10",
+    "drizzle-kit": "^0.30.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
