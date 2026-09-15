@@ -1,0 +1,17 @@
+node_modules
+dist
+build
+.data
+# Runtime data (SQLite, MCP git checkouts, secrets) — never commit
+data/**
+!data/.gitkeep
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage
+*.tsbuildinfo
+apps/dashboard/dist
+apps/gateway/dist
+packages/shared/dist

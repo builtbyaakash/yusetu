@@ -1,0 +1,27 @@
+# Yusetu MCP gateway
+#
+# Required: set GATEWAY_MASTER_KEY in .env before first start
+#   openssl rand -base64 32
+#
+# Then: docker compose up --build
+#
+# ./data is mounted for SQLite persistence (admin account, upstreams, etc.).
+# First launch with an empty volume opens signup (/setup) — no default admin.
+# To force fresh signup again, use an empty volume or remove the DB under ./data.
+
+services:
+  yusetu:
+    build: .
+    image: yusetu:local
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8080"
+      YUSETU_DATA_DIR: /app/data
+    volumes:
+      # Persist admin + config; empty ./data (or remove gateway.db) → signup
+      - ./data:/app/data
+    restart: unless-stopped
