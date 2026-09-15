@@ -1319,3 +1319,11 @@ tbody tr:hover td {
   color: var(--text-muted);
   margin: 0 0 1.25rem;
 }
+
+.auth-heading {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}

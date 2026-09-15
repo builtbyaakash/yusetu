@@ -1,8 +1,9 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { authApi } from "../api";
+import type { AuthMeResponse, HealthResponse } from "../api/types";
 
 type SetupPageProps = {
   setupRequired: boolean;
@@ -11,6 +12,7 @@ type SetupPageProps = {
 
 export function SetupPage({ setupRequired, onSuccess }: SetupPageProps) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -18,7 +20,13 @@ export function SetupPage({ setupRequired, onSuccess }: SetupPageProps) {
 
   const mutation = useMutation({
     mutationFn: () => authApi.setup({ username, password }),
-    onSuccess: () => {
+    onSuccess: (me: AuthMeResponse) => {
+      // Optimistically leave first-run mode so BootGate does not bounce
+      // back to /setup before health refetch completes.
+      qc.setQueryData<HealthResponse>(["health"], (prev) =>
+        prev ? { ...prev, setupRequired: false } : prev,
+      );
+      qc.setQueryData(["auth", "me"], me);
       onSuccess();
       void navigate("/mcps", { replace: true });
     },
@@ -51,7 +59,7 @@ export function SetupPage({ setupRequired, onSuccess }: SetupPageProps) {
     (mutation.error instanceof ApiError
       ? mutation.error.message
       : mutation.error
-        ? "Setup failed."
+        ? "Sign up failed."
         : null);
 
   return (
@@ -64,7 +72,8 @@ export function SetupPage({ setupRequired, onSuccess }: SetupPageProps) {
         />
         <div className="auth-brand-name">Yūsetu</div>
         <p className="auth-brand-tag">One Gateway. Every MCP.</p>
-        <p>Create the admin account for this gateway install.</p>
+        <h1 className="auth-heading">Create admin account</h1>
+        <p>Sign up to manage this gateway install. There is no default admin.</p>
         <form className="form" onSubmit={handleSubmit}>
           {error ? <div className="alert alert-error">{error}</div> : null}
           <div className="field">
@@ -107,12 +116,9 @@ export function SetupPage({ setupRequired, onSuccess }: SetupPageProps) {
             className="btn btn-primary"
             disabled={mutation.isPending}
           >
-            {mutation.isPending ? "Creating…" : "Create admin"}
+            {mutation.isPending ? "Creating…" : "Sign up"}
           </button>
         </form>
-        <p style={{ marginTop: "1.25rem", marginBottom: 0, fontSize: "0.9rem" }}>
-          Already set up? <Link to="/login">Sign in</Link>
-        </p>
       </div>
     </div>
   );

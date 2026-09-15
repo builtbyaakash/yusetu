@@ -14,6 +14,15 @@ Clients (Claude Desktop, Cursor, agent CLIs) see a single MCP server. Internally
 
 > **Brand:** Product name is **Yūsetu** (with macron). Package / CLI / config keys use `yusetu`.
 
+## Dashboard
+
+![MCPs](docs/screenshots/mcps.png)
+![Analytics](docs/screenshots/analytics.png)
+
+Token savings over time:
+
+![Analytics savings](docs/screenshots/analytics-savings.gif)
+
 ---
 
 ## What is Yūsetu
@@ -25,7 +34,7 @@ Clients (Claude Desktop, Cursor, agent CLIs) see a single MCP server. Internally
 | **Storage** | SQLite under `YUSETU_DATA_DIR` (default `./data`) |
 | **Secrets** | Upstream credentials encrypted at rest with `GATEWAY_MASTER_KEY` (AES-256-GCM) |
 
-**Dashboard flow:** first-run setup (admin) → login → add MCP upstreams → discover tools → enable/disable → playground.
+**Dashboard flow:** first-run signup (create admin) → add MCP upstreams → discover tools → enable/disable → playground.
 
 **Tool names (flat mode):** exposed as `{slug}__{toolName}` (e.g. `github__create_issue`).
 
@@ -55,7 +64,7 @@ pnpm dev
 - Dashboard (Vite): [http://127.0.0.1:5173](http://127.0.0.1:5173)
 - Gateway API + MCP: [http://127.0.0.1:8080](http://127.0.0.1:8080)
 
-On first visit, create the admin account at `/setup`, then add upstreams and discover tools.
+**First launch** always opens **signup** (`/setup`) when the database has no users — there is no default admin. Create your admin account, then add upstreams and discover tools. Wiping `data/` (or pointing `YUSETU_DATA_DIR` at an empty directory) resets the install to signup again.
 
 Production-style (build + gateway serves the dashboard static files):
 
@@ -194,7 +203,8 @@ docker compose up --build
 ```
 
 - UI + API + MCP: [http://127.0.0.1:8080](http://127.0.0.1:8080)
-- Persist: `./data` → `/app/data` in the container
+- Persist: `./data` → `/app/data` in the container — **mounting `./data` keeps your admin account** across restarts
+- For a **true fresh signup**, use an empty volume (or remove the SQLite DB under `data/`) before starting; otherwise the existing admin is preserved
 
 Stop with `Ctrl+C` or `docker compose down`. Data in `./data` is kept.
 

@@ -4,6 +4,10 @@
 #   openssl rand -base64 32
 #
 # Then: docker compose up --build
+#
+# ./data is mounted for SQLite persistence (admin account, upstreams, etc.).
+# First launch with an empty volume opens signup (/setup) — no default admin.
+# To force fresh signup again, use an empty volume or remove the DB under ./data.
 
 services:
   yusetu:
@@ -18,5 +22,6 @@ services:
       PORT: "8080"
       YUSETU_DATA_DIR: /app/data
     volumes:
+      # Persist admin + config; empty ./data (or remove gateway.db) → signup
       - ./data:/app/data
     restart: unless-stopped

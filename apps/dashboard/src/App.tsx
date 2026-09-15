@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -47,8 +48,13 @@ function BootGate() {
     queryFn: () => healthApi.get(),
   });
 
+  const setupRequired = healthQuery.data?.setupRequired ?? false;
+
+  // Skip /auth/me while setup is required so a stale cookie cannot mark us
+  // authenticated or flash protected routes before the /setup redirect.
   const meQuery = useQuery({
     queryKey: ["auth", "me"],
+    enabled: healthQuery.isSuccess && !setupRequired,
     queryFn: async (): Promise<AuthMeResponse | null> => {
       try {
         return await authApi.me();
@@ -61,6 +67,22 @@ function BootGate() {
     },
   });
 
+  // Drop any leftover session cookie once on a fresh (zero-user) install.
+  // One-shot so we do not clear the cookie created by a successful signup.
+  const clearedStaleSession = useRef(false);
+  useEffect(() => {
+    if (!setupRequired) {
+      clearedStaleSession.current = false;
+      return;
+    }
+    if (!healthQuery.isSuccess || clearedStaleSession.current) return;
+    clearedStaleSession.current = true;
+    void authApi.logout().catch(() => {
+      /* ignore — best-effort cookie clear */
+    });
+    qc.setQueryData(["auth", "me"], null);
+  }, [healthQuery.isSuccess, setupRequired, qc]);
+
   const logoutMutation = useMutation({
     mutationFn: () => authApi.logout(),
     onSettled: () => {
@@ -69,11 +91,13 @@ function BootGate() {
     },
   });
 
-  const setupRequired = healthQuery.data?.setupRequired ?? false;
-  const user = meQuery.data ?? null;
+  const user = setupRequired ? null : (meQuery.data ?? null);
   const authenticated = Boolean(user);
-  const booting = healthQuery.isLoading || meQuery.isLoading;
-  const bootError = healthQuery.error ?? meQuery.error;
+  const needMe = healthQuery.isSuccess && !setupRequired;
+  const booting =
+    healthQuery.isLoading || (needMe && meQuery.isLoading);
+  const bootError =
+    healthQuery.error ?? (needMe ? meQuery.error : null);
 
   const refreshAuth = () => {
     void qc.invalidateQueries({ queryKey: ["auth", "me"] });
@@ -99,7 +123,7 @@ function BootGate() {
             className="btn btn-primary"
             onClick={() => {
               void healthQuery.refetch();
-              void meQuery.refetch();
+              if (needMe) void meQuery.refetch();
             }}
           >
             Retry
@@ -150,6 +174,8 @@ function AppRoutes({
   onLogout,
   onAuthSuccess,
 }: AppRoutesProps) {
+  const unauthRedirect = setupRequired ? "/setup" : "/login";
+
   return (
     <Routes>
       <Route
@@ -175,7 +201,7 @@ function AppRoutes({
               <Outlet />
             </Layout>
           ) : (
-            <Navigate to="/login" replace />
+            <Navigate to={unauthRedirect} replace />
           )
         }
       >

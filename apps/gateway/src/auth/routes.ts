@@ -78,6 +78,11 @@ export async function handleSetup(c: Context) {
 
 export async function handleLogin(c: Context) {
   purgeExpiredSessions();
+  if (userCount() === 0) {
+    clearSessionCookie(c);
+    return c.json({ error: "Setup required", setupRequired: true }, 403);
+  }
+
   const body = LoginBodySchema.safeParse(await c.req.json());
   if (!body.success) {
     return c.json({ error: "Invalid body", details: body.error.flatten() }, 400);
@@ -116,6 +121,16 @@ export async function handleLogout(c: Context) {
 }
 
 export async function handleMe(c: Context) {
+  // Empty DB = first-run signup; never honor a stale session cookie.
+  if (userCount() === 0) {
+    const token = getCookie(c, SESSION_COOKIE);
+    if (token) {
+      deleteSessionByToken(token);
+    }
+    clearSessionCookie(c);
+    return c.json({ error: "Setup required", setupRequired: true }, 401);
+  }
+
   const token = getCookie(c, SESSION_COOKIE);
   if (!token) {
     return c.json({ error: "Unauthorized" }, 401);
@@ -130,6 +145,7 @@ export async function handleMe(c: Context) {
 }
 
 export function getSessionUser(c: Context) {
+  if (userCount() === 0) return null;
   const token = getCookie(c, SESSION_COOKIE);
   if (!token) return null;
   return findUserBySessionToken(token);
