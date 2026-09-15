@@ -176,30 +176,32 @@ export function AnalyticsPage() {
           ) : null}
           <section className="analytics-hero analytics-hero--savings">
             <div className="analytics-hero-top">
-              <p className="analytics-hero-label">Tokens saved</p>
-              {data.savingsPercent != null ? (
+              <p className="analytics-hero-label">Tool-definition tokens saved</p>
+              {(data.catalogSavingsPercent ?? data.savingsPercent) != null ? (
                 <span className="analytics-savings-badge">
-                  −{data.savingsPercent}%
+                  −{data.catalogSavingsPercent ?? data.savingsPercent}%
                 </span>
               ) : null}
             </div>
             <p className="analytics-hero-value">
-              {formatTokens(data.tokensSaved)}
+              {formatTokens(data.catalogTokensSaved ?? data.tokensSaved)}
             </p>
             <p className="analytics-hero-sub">
-              vs connecting each MCP individually
+              vs exposing the full catalog on tools/list (invoke payloads are
+              unchanged)
             </p>
           </section>
 
           <div className="analytics-compare">
             <div className="analytics-compare-item analytics-compare-item--savings">
-              <span className="analytics-compare-label">Saved</span>
+              <span className="analytics-compare-label">Catalog saved</span>
               <span className="analytics-compare-stat analytics-compare-stat--lg analytics-compare-stat--saved">
-                −{formatTokens(data.tokensSaved)}
+                −{formatTokens(data.catalogTokensSaved ?? data.tokensSaved)}
               </span>
-              {data.savingsPercent != null ? (
+              {(data.catalogSavingsPercent ?? data.savingsPercent) != null ? (
                 <span className="analytics-compare-hint">
-                  {data.savingsPercent}% fewer tokens
+                  {data.catalogSavingsPercent ?? data.savingsPercent}% fewer
+                  definition tokens
                 </span>
               ) : null}
             </div>
@@ -212,16 +214,21 @@ export function AnalyticsPage() {
               </span>
             </div>
             <div className="analytics-compare-item">
-              <span className="analytics-compare-label">Tokens via Yūsetu</span>
+              <span className="analytics-compare-label">All tokens via Yūsetu</span>
               <span className="analytics-compare-stat analytics-compare-stat--lg">
                 {formatTokens(data.tokensViaYusetu)}
               </span>
             </div>
             <div className="analytics-compare-item">
-              <span className="analytics-compare-label">Tokens if direct</span>
+              <span className="analytics-compare-label">All tokens if direct</span>
               <span className="analytics-compare-stat analytics-compare-stat--lg">
                 {formatTokens(data.tokensIfDirect)}
               </span>
+              {data.savingsPercent != null ? (
+                <span className="analytics-compare-hint">
+                  {data.savingsPercent}% overall (includes invokes)
+                </span>
+              ) : null}
             </div>
           </div>
 

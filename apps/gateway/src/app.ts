@@ -103,7 +103,11 @@ export function createApp(
   app.post("/api/api-keys", requireAdmin, createApiKey);
   app.delete("/api/api-keys/:id", requireAdmin, deleteApiKey);
 
-  app.get("/api/analytics/usage", requireAdmin, createUsageAnalyticsHandler());
+  app.get(
+    "/api/analytics/usage",
+    requireAdmin,
+    createUsageAnalyticsHandler(config.toolPresentation),
+  );
 
   if (config.enableMcpOauth) {
     app.route("/", createOauthMetadataRoutes());

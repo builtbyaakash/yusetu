@@ -2,23 +2,28 @@ import type { Context } from "hono";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { upstreams, usageEvents } from "../db/schema.js";
-import { estimateDirectToolTokens } from "../analytics/tokens.js";
+import {
+  estimateDirectCatalogTokens,
+  estimateDirectToolTokens,
+  estimateToolDescriptorTokens,
+} from "../analytics/tokens.js";
+import type { ToolPresentation } from "../config.js";
+import { metaToolDescriptors } from "../mcp/meta-tools.js";
 import { runtimeSnapshot } from "../mcp/snapshot.js";
 
 /**
  * Usage analytics aggregates all recorded events (all-time).
  * Savings = counterfactual (connect each MCP separately) minus actual gateway traffic.
  *
- * Catalog tokensIfDirect is recorded once on tools_list (full upstream union).
- * Secondary discovery (list_tools / search_tools / get_tool) records via tokens only
- * so schemas are not double-counted when agents search → get_tool after tools/list.
+ * In meta mode, catalog exposure (full upstream union vs ~5 meta tools) is attributed
+ * from the live snapshot whenever there is any usage — not only when a tools/list
+ * event was recorded. MCP clients often cache tools/list, so relying on that event
+ * alone made savings look like 0% after invoke-only traffic.
  *
  * Event kinds:
- * - tools_list (mcpSlug null): shared catalog discovery — sole catalog ifDirect
- * - list_tools: per-MCP discovery (yusetu_list_tools)
- * - search_tools: cross-MCP BM25 search (yusetu_search_tools)
- * - get_tool: single-tool descriptor fetch (yusetu_get_tool)
- * - tool_call: per-MCP invoke
+ * - tools_list (mcpSlug null): shared catalog discovery via tokens
+ * - list_tools / search_tools / get_tool: secondary discovery (via only in meta)
+ * - tool_call: per-MCP invoke (via ≈ ifDirect)
  */
 export type UsageAnalyticsResponse = {
   totalCalls: number;
@@ -26,7 +31,12 @@ export type UsageAnalyticsResponse = {
   tokensIfDirect: number;
   tokensSaved: number;
   savingsPercent: number | null;
-  /** Discovery traffic: tools_list + list_tools + search_tools + get_tool. */
+  /** Tool-definition / catalog exposure only (meta list vs full union). */
+  catalogTokensVia: number;
+  catalogTokensIfDirect: number;
+  catalogTokensSaved: number;
+  catalogSavingsPercent: number | null;
+  /** Discovery traffic: catalog exposure + list_tools + search_tools + get_tool. */
   discoveryTokensVia: number;
   discoveryTokensIfDirect: number;
   /** Invoke traffic: tool_call only. */
@@ -40,10 +50,8 @@ export type UsageAnalyticsResponse = {
     calls: number;
     tokensViaYusetu: number;
     tokensIfDirect: number;
-    /** list_tools / search_tools / get_tool (and similar) for this MCP. */
     discoveryTokensVia: number;
     discoveryTokensIfDirect: number;
-    /** tool_call for this MCP. */
     invokeTokensVia: number;
     invokeTokensIfDirect: number;
     catalogTokens: number;
@@ -57,6 +65,15 @@ function isDiscoveryKind(kind: string): boolean {
     kind === "list_tools" ||
     kind === "search_tools" ||
     kind === "get_tool"
+  );
+}
+
+function estimateMetaToolsListTokens(): number {
+  return metaToolDescriptors().reduce(
+    (sum, t) =>
+      sum +
+      estimateToolDescriptorTokens(t.name, t.description ?? "", t.inputSchema),
+    0,
   );
 }
 
@@ -95,7 +112,14 @@ function toMcpRow(
   };
 }
 
-export function createUsageAnalyticsHandler() {
+function pctSaved(saved: number, ifDirect: number): number | null {
+  if (ifDirect <= 0) return null;
+  return Math.round((saved / ifDirect) * 10_000) / 100;
+}
+
+export function createUsageAnalyticsHandler(
+  toolPresentation: ToolPresentation = "meta",
+) {
   return async (c: Context) => {
     const db = getDb();
     const tools = runtimeSnapshot.list();
@@ -107,7 +131,6 @@ export function createUsageAnalyticsHandler() {
 
     const nameBySlug = new Map(upstreamRows.map((u) => [u.slug, u.name]));
 
-    // Catalog context (current enabled tools) — not from events
     const catalogBySlug = new Map<
       string,
       { toolCount: number; catalogTokens: number }
@@ -123,6 +146,7 @@ export function createUsageAnalyticsHandler() {
       }
     }
 
+    const catalogTokensTotal = estimateDirectCatalogTokens(tools);
     const events = db.select().from(usageEvents).all();
 
     let totalCalls = 0;
@@ -132,11 +156,27 @@ export function createUsageAnalyticsHandler() {
     let discoveryTokensIfDirect = 0;
     let invokeTokensVia = 0;
     let invokeTokensIfDirect = 0;
+    let toolsListVia = 0;
+    let sawToolsList = false;
 
     const usageBySlug = new Map<string, Agg>();
 
     for (const ev of events) {
-      // Global totals include every event (tools_list with null slug included).
+      if (ev.kind === "tools_list") {
+        sawToolsList = true;
+        toolsListVia += ev.tokensViaGateway;
+        tokensViaYusetu += ev.tokensViaGateway;
+        discoveryTokensVia += ev.tokensViaGateway;
+        // Meta: catalog ifDirect comes from the live snapshot below (clients
+        // often cache tools/list, so event ifDirect alone is unreliable).
+        // Flat: tools/list already exposes the full union — use event ifDirect.
+        if (toolPresentation !== "meta") {
+          tokensIfDirect += ev.tokensIfDirect;
+          discoveryTokensIfDirect += ev.tokensIfDirect;
+        }
+        continue;
+      }
+
       tokensViaYusetu += ev.tokensViaGateway;
       tokensIfDirect += ev.tokensIfDirect;
 
@@ -164,6 +204,45 @@ export function createUsageAnalyticsHandler() {
       usageBySlug.set(ev.mcpSlug, row);
     }
 
+    const hasUsage = events.length > 0;
+    let catalogTokensVia = 0;
+    let catalogTokensIfDirect = 0;
+
+    if (toolPresentation === "meta" && hasUsage && catalogTokensTotal > 0) {
+      catalogTokensVia = sawToolsList ? toolsListVia : estimateMetaToolsListTokens();
+      catalogTokensIfDirect = catalogTokensTotal;
+
+      if (!sawToolsList) {
+        // Attribute the always-on meta tools/list cost even when the client
+        // never re-listed after a reconnect / analytics wipe.
+        tokensViaYusetu += catalogTokensVia;
+        discoveryTokensVia += catalogTokensVia;
+      }
+
+      tokensIfDirect += catalogTokensIfDirect;
+      discoveryTokensIfDirect += catalogTokensIfDirect;
+
+      // Per-MCP: credit each active MCP's catalog as the direct-connect cost.
+      for (const [slug, usage] of usageBySlug) {
+        const cat = catalogBySlug.get(slug);
+        if (!cat || cat.catalogTokens <= 0) continue;
+        if (
+          usage.calls <= 0 &&
+          usage.tokensViaYusetu <= 0 &&
+          usage.discoveryTokensVia <= 0
+        ) {
+          continue;
+        }
+        usage.tokensIfDirect += cat.catalogTokens;
+        usage.discoveryTokensIfDirect += cat.catalogTokens;
+      }
+    } else if (toolPresentation !== "meta" && sawToolsList) {
+      catalogTokensVia = toolsListVia;
+      catalogTokensIfDirect = events
+        .filter((e) => e.kind === "tools_list")
+        .reduce((s, e) => s + e.tokensIfDirect, 0);
+    }
+
     const emptyCatalog = { toolCount: 0, catalogTokens: 0 };
 
     const byMcp = upstreamRows
@@ -177,7 +256,6 @@ export function createUsageAnalyticsHandler() {
       )
       .sort((a, b) => a.slug.localeCompare(b.slug));
 
-    // Include slugs that appeared in events but are no longer enabled
     for (const [slug, usage] of usageBySlug) {
       if (byMcp.some((r) => r.slug === slug)) continue;
       byMcp.push(
@@ -192,17 +270,21 @@ export function createUsageAnalyticsHandler() {
     byMcp.sort((a, b) => a.slug.localeCompare(b.slug));
 
     const tokensSaved = Math.max(0, tokensIfDirect - tokensViaYusetu);
-    const savingsPercent =
-      tokensIfDirect > 0
-        ? Math.round((tokensSaved / tokensIfDirect) * 10_000) / 100
-        : null;
+    const catalogTokensSaved = Math.max(
+      0,
+      catalogTokensIfDirect - catalogTokensVia,
+    );
 
     const body: UsageAnalyticsResponse = {
       totalCalls,
       tokensViaYusetu,
       tokensIfDirect,
       tokensSaved,
-      savingsPercent,
+      savingsPercent: pctSaved(tokensSaved, tokensIfDirect),
+      catalogTokensVia,
+      catalogTokensIfDirect,
+      catalogTokensSaved,
+      catalogSavingsPercent: pctSaved(catalogTokensSaved, catalogTokensIfDirect),
       discoveryTokensVia,
       discoveryTokensIfDirect,
       invokeTokensVia,

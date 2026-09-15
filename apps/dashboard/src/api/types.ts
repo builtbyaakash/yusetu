@@ -123,6 +123,11 @@ export type UsageAnalytics = {
   tokensIfDirect: number;
   tokensSaved: number;
   savingsPercent: number | null;
+  /** Tool-definition catalog exposure (meta list vs full union). */
+  catalogTokensVia?: number;
+  catalogTokensIfDirect?: number;
+  catalogTokensSaved?: number;
+  catalogSavingsPercent?: number | null;
   mcpCount: number;
   catalogToolCount: number;
   byMcp: Array<{

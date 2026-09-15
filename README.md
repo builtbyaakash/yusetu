@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/brand/yusetu-logo.png" alt="Yūsetu" width="160" />
+  <img src="docs/brand/yusetu-logo.png" alt="Yūsetu — One Gateway. Every MCP." width="200" />
 </p>
 
 # Yūsetu
