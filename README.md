@@ -4,122 +4,146 @@
 
 # Yūsetu
 
-**One Gateway. Every MCP.**
+## Stupidly Simple and Straight Forward MCP Gateway
 
-Open-source **MCP gateway / proxy**: one MCP endpoint that aggregates tools from many upstream MCP servers. Self-hosted, single-tenant.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/builtbyaakash/yusetu?style=social)](https://github.com/builtbyaakash/yusetu)
 
-Clients (Claude Desktop, Cursor, agent CLIs) see a single MCP server. Internally, Yūsetu connects to N upstreams (stdio, Streamable HTTP, or SSE), namespaces tools, and routes `tools/call` to the right upstream.
+Connect hosted MCPs, or point Yūsetu at an MCP Git repository and let Yūsetu run it for you. Access everything through a single MCP endpoint.
 
-**Stack:** TypeScript · Hono · Drizzle / SQLite · React dashboard
+> **Don't have a hosted MCP? Just give Yūsetu the Git repo.**
 
-> **Brand:** Product name is **Yūsetu** (with macron). Package / CLI / config keys use `yusetu`.
-
-## Dashboard
-
-![MCPs](docs/screenshots/mcps.png)
-![Analytics](docs/screenshots/analytics.png)
-
-Token savings over time:
-
-![Analytics savings](docs/screenshots/analytics-savings.gif)
+Open-source · self-hosted · [github.com/builtbyaakash/yusetu](https://github.com/builtbyaakash/yusetu)
 
 ---
 
-## What is Yūsetu
+## The problem
 
-| Piece | Role |
+As you adopt MCP, you end up with many servers: some hosted, some local stdio, some only published as Git repos. Each AI client (Cursor, Claude, agents) wants its own connection config.
+
+That means cloning repos, installing deps, wiring env vars, and pasting the same MCP blocks into every client.
+
+Yūsetu is one place to register those MCPs and one endpoint for every client.
+
+---
+
+## Don't have a hosted MCP? Just give Yūsetu the Git repo.
+
+Many MCP projects ship as source only. Instead of:
+
+**clone → install → configure → expose → paste into every client**
+
+you can register an HTTPS Git URL in Yūsetu. On create/update the gateway:
+
+1. Clones the repo under `YUSETU_DATA_DIR/mcp-sources/{slug}`
+2. Optionally runs your `installCommand` (argv, no shell)
+3. Spawns the MCP as a **stdio** process (`command` + `args`)
+4. Discovers tools and exposes them on the shared gateway endpoint
+
+```text
+Git repository (HTTPS)
+        ↓
+     Yūsetu  (clone + optional install)
+        ↓
+  stdio MCP process
+        ↓
+  Single MCP endpoint (/mcp or stdio bridge)
+        ↓
+  Cursor / Claude / agents
+```
+
+### What works today
+
+| Piece | Behavior |
 | --- | --- |
-| **Data plane** | MCP facade: `tools/list`, `tools/call`, Streamable HTTP at `/mcp`, STDIO bridge |
-| **Control plane** | Admin REST API + React dashboard (setup, login, upstreams, tools, playground) |
-| **Storage** | SQLite under `YUSETU_DATA_DIR` (default `./data`) |
-| **Secrets** | Upstream credentials encrypted at rest with `GATEWAY_MASTER_KEY` (AES-256-GCM) |
+| URL | `http://` or `https://` Git remotes only (no `ssh://`, no `git@…`, no credentials in the URL) |
+| Ref | `gitRef` branch/tag/commit (default `main`) |
+| Install | Optional `installCommand` — space-split argv run once after checkout on **create/update** (not on Rediscover) |
+| Runtime | **stdio only** for Git-sourced MCPs; whatever `command`/`args` you set (`node`, `uv`, `uvx`, `npx`, …) must be on the **gateway host PATH** |
+| Working dir | Forced to the checkout directory |
+| Secrets | Encrypted at rest (`GATEWAY_MASTER_KEY`); keys become env vars for the child process |
+| Failures | Clone/install errors return HTTP 400; runtime issues show **Unhealthy** on the MCP; stderr goes to gateway logs |
 
-**Dashboard flow:** first-run signup (create admin) → add MCP upstreams → discover tools → enable/disable → playground.
+**Not implemented:** Docker builds of MCP images, SSH clone, sandbox/container isolation, or re-install on Rediscover.
 
-**Tool names (flat mode):** exposed as `{slug}__{toolName}` (e.g. `github__create_issue`).
+**Trust model:** Yūsetu runs third-party code on the gateway host. Only add repositories you trust. See [Security](#security).
 
-**Tool catalog (default `TOOL_PRESENTATION=meta`):** agents see five meta tools (BM25 `yusetu_search_tools`, schema compression on `yusetu_get_tool`, plus list/call helpers). Preferred discovery: `yusetu_search_tools` → `yusetu_get_tool` (compressed schema) → `yusetu_call`. That path typically saves **~90–95% of tool-definition / catalog tokens** vs exposing the full union of upstream schemas (not invoke payloads). `yusetu_list_mcps` / `yusetu_list_tools` (`detail=summary` by default) still exist for browsing; prefer summary listing then `yusetu_get_tool` for schemas; use `query` / `ifNoneMatch` to avoid reloading catalogs. Set `INLINE_TINY_MCPS=true` to also inline tiny upstreams as `slug__tool` in `tools/list`. `TOOL_PRESENTATION=flat` is **debug only** (full union of every `slug__tool`).
-
-**Transports:**
-
-- **Streamable HTTP** — `POST` / `GET` / `DELETE` on `/mcp`
-- **STDIO bridge** — `yusetu stdio` speaks MCP on stdio and forwards to the local HTTP daemon (one SQLite writer)
+The official Docker image is Node-only (no `git`/`uv` baked in). For Git MCPs, run on a host that has the tools you need, or build a custom image.
 
 ---
 
-## Quick start
+## Architecture
 
-Requirements: **Node.js 22** (not 26 — `better-sqlite3` has no Node 26 prebuilds), **pnpm 9**.
+```mermaid
+flowchart TB
+  subgraph clients [AI clients]
+    Cursor
+    Claude
+    Agents[AI Agents]
+  end
 
-Root scripts auto-prefer Homebrew `node@22` via `scripts/with-node22.sh` when present at `/usr/local/opt/node@22` or `/opt/homebrew/opt/node@22`.
+  clients --> Endpoint[Single MCP endpoint]
+  Endpoint --> Gateway[Yūsetu Gateway]
 
-```bash
-pnpm install
-cp .env.example .env
-openssl rand -base64 32   # paste into GATEWAY_MASTER_KEY in .env
-pnpm rebuild:native       # if you hit NODE_MODULE_VERSION errors
-pnpm dev
+  Gateway --> Hosted[Hosted MCP<br/>streamable-http / SSE]
+  Gateway --> GitSrc[Git MCP repo]
+  Gateway --> Local[Local stdio MCP]
+
+  GitSrc --> Build[Clone + installCommand]
+  Build --> Proc[stdio MCP process]
 ```
 
-- Dashboard (Vite): [http://127.0.0.1:5173](http://127.0.0.1:5173)
-- Gateway API + MCP: [http://127.0.0.1:8080](http://127.0.0.1:8080)
-
-**First launch** always opens **signup** (`/setup`) when the database has no users — there is no default admin. Create your admin account, then add upstreams and discover tools. Wiping `data/` (or pointing `YUSETU_DATA_DIR` at an empty directory) resets the install to signup again.
-
-Production-style (build + gateway serves the dashboard static files):
-
-```bash
-pnpm build
-pnpm start
-# open http://127.0.0.1:8080
-```
+Clients only talk to Yūsetu. Upstream MCPs are registered in the dashboard (hosted URL, local stdio, or Git checkout).
 
 ---
 
-## Claude Desktop / Cursor
+## Currently available
 
-Run the gateway daemon first (`pnpm dev`, `pnpm start`, or Docker). Then point the client at Yūsetu.
+### Git repository MCPs
 
-### STDIO bridge (Claude Desktop, Cursor)
+Point Yūsetu at an MCP Git repository (HTTPS). Yūsetu clones it, optionally installs, runs it as stdio, and exposes its tools on the gateway.
 
-`yusetu stdio` forwards MCP over stdio to `http://127.0.0.1:$PORT/mcp` (default port `8080`).
+### Multiple MCP connections
 
-**Claude Desktop** (`claude_desktop_config.json`):
+Register many upstreams — hosted HTTP/SSE, local stdio, or Git — behind one gateway.
 
-```json
-{
-  "mcpServers": {
-    "yusetu": {
-      "command": "node",
-      "args": [
-        "/ABS/PATH/TO/Yusetu/apps/gateway/dist/cli/index.js",
-        "stdio"
-      ],
-      "env": {
-        "PORT": "8080"
-      }
-    }
-  }
-}
-```
+### Unified MCP endpoint
 
-After `pnpm build`, or with the package bin linked:
+Clients connect once (HTTP `/mcp` or the stdio bridge). They do not need a config block per upstream.
 
-```json
-{
-  "mcpServers": {
-    "yusetu": {
-      "command": "pnpm",
-      "args": ["--dir", "/ABS/PATH/TO/Yusetu", "exec", "yusetu", "stdio"],
-      "env": {
-        "PORT": "8080"
-      }
-    }
-  }
-}
-```
+### Tool discovery and execution
 
-### HTTP (Cursor / Streamable HTTP clients)
+Default catalog is **meta mode**: five gateway tools (`yusetu_search_tools`, `yusetu_list_mcps`, `yusetu_list_tools`, `yusetu_get_tool`, `yusetu_call`). Preferred path: search → get tool schema → call. BM25 search and optional schema compression cut **tool-definition** tokens vs dumping every upstream schema.
+
+### API key authentication
+
+Protect `/mcp` with API keys (`Authorization: Bearer …` or `X-Api-Key`). Create and revoke keys in Settings. Optional OAuth 2.1 PKCE for HTTP clients.
+
+### Upstream OAuth and secrets
+
+Connect OAuth-capable hosted MCPs from the dashboard. Store static secrets encrypted; use `header.*` keys for HTTP headers (e.g. `header.Authorization`).
+
+### Self-hosted and open source
+
+Run it on your machine or infra. **MIT** licensed.
+
+---
+
+## Example workflow
+
+1. **Add an MCP** in the dashboard (hosted URL, stdio command, or Git repo).
+2. Yūsetu **connects / starts** it (clone + install for Git sources).
+3. Yūsetu **discovers tools** (auto on create when possible; otherwise Rediscover).
+4. **Create an API key** in Settings.
+5. Point Cursor/Claude at Yūsetu — use the tools via the meta catalog.
+
+![MCPs dashboard](docs/screenshots/mcps.png)
+
+### Client config (real)
+
+Gateway must already be running (`pnpm dev`, `pnpm start`, or Docker).
+
+**HTTP (Cursor / Streamable HTTP):**
 
 ```json
 {
@@ -134,95 +158,144 @@ After `pnpm build`, or with the package bin linked:
 }
 ```
 
-Copy live URLs and a ready-to-paste snippet from **Settings** in the dashboard.
+**STDIO bridge** (after `pnpm build`):
 
----
-
-## Connecting clients
-
-### Auth & tool catalog
-
-- **Auth is on by default** (`REQUIRE_MCP_AUTH=true`). MCP clients must send an API key (`Authorization: Bearer <key>` or `X-Api-Key`) or complete OAuth PKCE. Unauthenticated `/mcp` returns `401` with `WWW-Authenticate` so OAuth clients can start login. Set `REQUIRE_MCP_AUTH=false` only for trusted local experiments.
-- **Dashboard login** uses a session cookie for the admin UI only — it is not an MCP client credential.
-- **API keys** — create/revoke in Settings for scripts, STDIO bridges, and clients that set a static Bearer / `X-Api-Key` (or `YUSETU_API_KEY`).
-- **OAuth 2.1 (PKCE)** — Cursor, Claude, and other HTTP MCP clients discover the authorization server from the `401` challenge, then:
-  - Protected resource metadata (PRM): `/.well-known/oauth-protected-resource`
-  - Authorization server metadata: `/.well-known/oauth-authorization-server`
-- **Tool catalog** — default `TOOL_PRESENTATION=meta` exposes five gateway tools (`yusetu_search_tools` with BM25, `yusetu_list_mcps`, `yusetu_list_tools`, `yusetu_get_tool` with schema compression, `yusetu_call`) only. Preferred flow: search → get_tool → call; expect **~90–95% fewer tool-definition tokens** than a flat full-catalog `tools/list` (invoke payloads unchanged). list_mcps/list_tools still available. Tiny MCP inlining is off by default (`INLINE_TINY_MCPS=false`); set `INLINE_TINY_MCPS=true` to add tiny catalogs as `slug__tool`. `TOOL_PRESENTATION=flat` is **debug only** — exposes every `slug__tool`.
-
----
-
-## Architecture
-
-```
-┌──────────────┐     STDIO      ┌─────────────┐    HTTP     ┌────────────────┐
-│ Claude/Cursor│ ─────────────► │ yusetu stdio│ ──────────► │                │
-└──────────────┘                │   bridge    │             │  Yūsetu        │
-                                └─────────────┘             │  gateway       │
-┌──────────────┐   Streamable   ┌─────────────┐             │  :8080         │
-│ Cursor / CLI │ ── HTTP /mcp ─►│             │────────────►│                │
-└──────────────┘                └─────────────┘             │  data plane    │
-                                                            │  + control API │
-┌──────────────┐                 session cookie             │  + static UI   │
-│  Dashboard   │ ──────────────────────────────────────────►│                │
-└──────────────┘                                            └───────┬────────┘
-                                                                    │
-                                                    ┌───────────────┼───────────────┐
-                                                    ▼               ▼               ▼
-                                              Upstream A      Upstream B      Upstream N
-                                              (stdio/HTTP)    (stdio/HTTP)    (stdio/HTTP)
+```json
+{
+  "mcpServers": {
+    "yusetu": {
+      "command": "node",
+      "args": [
+        "/ABS/PATH/TO/Yusetu/apps/gateway/dist/cli/index.js",
+        "stdio"
+      ],
+      "env": {
+        "PORT": "8080",
+        "YUSETU_API_KEY": "<your-api-key>"
+      }
+    }
+  }
+}
 ```
 
-- **Data plane** — live MCP traffic; in-memory tool snapshot; routes `{slug}__{tool}` to the upstream client pool.
-- **Control plane** — admin auth, upstream CRUD, secret vault, discovery, playground; writes SQLite; refreshes the snapshot.
-- **v1 process model** — one Node process hosts both planes (module boundaries stay clean for a later split).
+Copy live snippets from **Settings** in the dashboard.
 
 ---
 
-## Security notes
+## Hosted MCP vs Git MCP
 
-- **`GATEWAY_MASTER_KEY`** — required to store/decrypt upstream secrets. Generate with `openssl rand -base64 32`. Losing it makes existing ciphertext unreadable. Do not commit `.env`.
-- **Single-tenant** — one admin account per install; bind to `127.0.0.1` for local-only use.
-- **`REQUIRE_MCP_AUTH`** — default `true`. Requires API key or OAuth on `/mcp`. Set `false` only for trusted local experiments.
-- **`TOOL_PRESENTATION`** — `meta` (production default, 5 gateway meta tools) or `flat` (**debug only**, all `slug__tool` tools).
-- **`INLINE_TINY_MCPS`** — when `meta`, optionally inline tiny upstream catalogs into `tools/list` (default `false`).
-- **Secrets** — never returned in plaintext after create; logs redact args unless `LOG_TOOL_ARGS` is set carefully.
-- **Stdio upstreams** — spawned without a shell (`command` + `args` only).
-- **GitHub source (v1):** `gitUrl` + `installCommand` + `command` (stdio MCPs from a git checkout; `cwd` managed by the gateway).
+| MCP source | What Yūsetu does |
+| --- | --- |
+| Hosted MCP endpoint | Connect (streamable-http or SSE; OAuth or static headers) |
+| MCP Git repository | Clone, optional install, run as stdio inside the gateway |
+| Local stdio binary | Spawn with `command` / `args` / secrets |
+| Multiple MCPs | One gateway catalog and one client endpoint |
+| Multiple clients | All point at Yūsetu |
 
 ---
 
-## Docker Compose
+## Quick start
 
-**You must set `GATEWAY_MASTER_KEY` in `.env` before starting** (same as local). Compose loads `.env` and mounts `./data` for SQLite.
+Requirements: **Node.js 22** (not 26 — `better-sqlite3`), **pnpm 9**.
 
 ```bash
+git clone https://github.com/builtbyaakash/yusetu.git
+cd yusetu
+pnpm install
 cp .env.example .env
-openssl rand -base64 32   # set GATEWAY_MASTER_KEY=
-# For containers, prefer HOST=0.0.0.0 in .env (compose also forces it)
+openssl rand -base64 32   # paste into GATEWAY_MASTER_KEY=
+pnpm rebuild:native       # if you hit NODE_MODULE_VERSION errors
+pnpm dev
+```
+
+- Dashboard: [http://127.0.0.1:5173](http://127.0.0.1:5173)
+- Gateway + MCP: [http://127.0.0.1:8080](http://127.0.0.1:8080)
+
+First launch with an empty database opens **signup** (`/setup`) — there is no default admin. Then:
+
+1. Add an MCP (hosted / stdio / Git)
+2. Create an API key in Settings
+3. Connect Cursor or Claude with the configs above
+
+Production-style:
+
+```bash
+pnpm build
+pnpm start
+# http://127.0.0.1:8080
+```
+
+Docker Compose (set `GATEWAY_MASTER_KEY` in `.env` first):
+
+```bash
 docker compose up --build
 ```
 
-- UI + API + MCP: [http://127.0.0.1:8080](http://127.0.0.1:8080)
-- Persist: `./data` → `/app/data` in the container — **mounting `./data` keeps your admin account** across restarts
-- For a **true fresh signup**, use an empty volume (or remove the SQLite DB under `data/`) before starting; otherwise the existing admin is preserved
+---
 
-Stop with `Ctrl+C` or `docker compose down`. Data in `./data` is kept.
+## Why Yūsetu?
+
+- Stupidly simple: one gateway, one endpoint
+- Hosted MCPs and local stdio in the same place
+- Git repos can become MCPs without a separate hosting step
+- Self-hosted on your infra
+- Open source, free to use
+
+No “AI platform” pitch — just an MCP gateway that stays out of the way.
 
 ---
 
-## Monorepo layout
+## Free. Always.
 
-```
-apps/gateway     # Hono server, MCP facade, CLI (yusetu serve | stdio)
-apps/dashboard   # React + Vite admin UI
-packages/shared  # Shared Zod schemas / helpers
-data/            # SQLite + runtime files (gitignored DB files)
-docs/brand       # Logo and mark assets
-```
+Yūsetu is open source (**MIT**) and free to use.
+
+You can self-host it, modify it, fork it, and use it for personal or commercial projects under the license terms.
+
+That promise is about **this open-source project**. It does not imply a future hosted Yūsetu cloud product (if any) would be free.
 
 ---
 
-## License
+## Security
 
-[MIT](./LICENSE)
+**Git MCPs execute third-party code on the gateway host.** There is no sandbox or container isolation in v1. Treat an untrusted repo like running `npm install && node server.js` on that machine.
+
+- Only add Git repositories you trust.
+- Keep `GATEWAY_MASTER_KEY` secret; it encrypts upstream credentials. Losing it makes existing ciphertext unreadable.
+- Prefer `REQUIRE_MCP_AUTH=true` (default). Do not expose `/mcp` to the public internet without auth.
+- Git clone URLs cannot embed credentials; private repos need a host-level credential helper or a public URL — plan accordingly.
+- Secrets without a `header.` prefix are passed as environment variables to stdio children; `header.*` becomes HTTP headers for remote MCPs.
+- Official Docker image lacks `git`/`uv`; running Git MCPs in Docker means baking those tools into a custom image and accepting the same trust model.
+
+---
+
+## What's next
+
+Planned — **not** available yet:
+
+1. **Tool groups** — group tools by use case (GitHub, databases, DevOps, …).
+2. **Team support** — share and manage MCP configs across a team (today: single-tenant admin).
+3. **Scoped API keys** — multiple keys already exist; planned: restrict a key to specific tools.
+4. **MCP health monitoring** — upstreams already show healthy/unhealthy; planned: alerts when an MCP goes down.
+
+---
+
+## Contributing
+
+Issues, feature requests, and pull requests are welcome:
+
+- [Open an issue](https://github.com/builtbyaakash/yusetu/issues)
+- PRs that improve MCP compatibility, Git-source ergonomics, or gateway clarity are especially useful
+
+---
+
+## Feedback
+
+> Yūsetu is intentionally being built to stay simple.
+>
+> If you use MCPs, I'd love to hear what feels painful today and what you'd want an MCP gateway to do.
+
+→ [GitHub Issues](https://github.com/builtbyaakash/yusetu/issues)
+
+---
+
+**Brand:** product name **Yūsetu** (macron); package / CLI / config keys use `yusetu`.
