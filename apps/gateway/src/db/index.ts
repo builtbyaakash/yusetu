@@ -175,6 +175,19 @@ function migrateSchema(sqlite: Database.Database): void {
   if (!upstreamCols.some((c) => c.name === "install_command")) {
     sqlite.exec(`ALTER TABLE upstreams ADD COLUMN install_command TEXT`);
   }
+  if (!upstreamCols.some((c) => c.name === "isolation")) {
+    sqlite.exec(
+      `ALTER TABLE upstreams ADD COLUMN isolation TEXT NOT NULL DEFAULT 'host'`,
+    );
+  }
+  if (!upstreamCols.some((c) => c.name === "isolation_network")) {
+    sqlite.exec(
+      `ALTER TABLE upstreams ADD COLUMN isolation_network TEXT NOT NULL DEFAULT 'none'`,
+    );
+  }
+  if (!upstreamCols.some((c) => c.name === "isolation_image")) {
+    sqlite.exec(`ALTER TABLE upstreams ADD COLUMN isolation_image TEXT`);
+  }
 
   sqlite.exec(`
 CREATE TABLE IF NOT EXISTS upstream_oauth (

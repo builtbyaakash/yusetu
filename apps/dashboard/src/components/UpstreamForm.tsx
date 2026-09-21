@@ -5,6 +5,8 @@ import type {
   UpdateUpstream,
   Upstream,
   UpstreamAuthMode,
+  UpstreamIsolation,
+  UpstreamIsolationNetwork,
   UpstreamTransport,
 } from "../api/types";
 import { SecretFields, secretsToRecord, secretsToRemove, type SecretPair } from "./SecretFields";
@@ -62,6 +64,14 @@ export function UpstreamForm({
   const [installCommand, setInstallCommand] = useState(
     initial?.installCommand ?? "",
   );
+  const [isolation, setIsolation] = useState<UpstreamIsolation>(
+    initial?.isolation ?? "docker",
+  );
+  const [isolationNetwork, setIsolationNetwork] =
+    useState<UpstreamIsolationNetwork>(initial?.isolationNetwork ?? "none");
+  const [isolationImage, setIsolationImage] = useState(
+    initial?.isolationImage ?? "",
+  );
   const [url, setUrl] = useState(initial?.url ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [timeoutMs, setTimeoutMs] = useState(
@@ -90,6 +100,9 @@ export function UpstreamForm({
     } else {
       // Placeholder; gateway overwrites with streamable-http | sse from URL.
       setTransport("streamable-http");
+    }
+    if (mode === "github" && !isEdit) {
+      setIsolation("docker");
     }
   }
 
@@ -130,6 +143,10 @@ export function UpstreamForm({
         installCommand: installCommand.trim() || undefined,
         command: command.trim(),
         argsJson: parseArgs(argsText),
+        isolation,
+        isolationNetwork: isolation === "docker" ? isolationNetwork : "none",
+        isolationImage:
+          isolation === "docker" ? isolationImage.trim() : undefined,
         url: undefined,
       });
       return;
@@ -140,6 +157,7 @@ export function UpstreamForm({
       command: command.trim(),
       argsJson: parseArgs(argsText),
       cwd: cwd.trim() || undefined,
+      isolation: "host",
       url: undefined,
     });
   }
@@ -195,8 +213,9 @@ export function UpstreamForm({
       ) : isGithub ? (
         <>
           <div className="alert alert-info">
-            Clones and runs code from this repo on the gateway host. Only use
-            repos you trust.
+            Clones the repo on the gateway, then runs install/runtime in a slim
+            Docker container by default (no host process for untrusted code).
+            Prefer network <code>none</code> unless the MCP needs egress.
           </div>
           <div className="field">
             <label htmlFor="upstream-git-url">Git URL</label>
@@ -231,10 +250,8 @@ export function UpstreamForm({
               placeholder="npm install or uv sync"
             />
             <span className="hint">
-              Optional — run once after clone. Prefer{" "}
-              <code>uv sync</code> when the repo has a lockfile (not{" "}
-              <code>uv pip install</code>). uv auto-creates .venv with a
-              managed Python.
+              Optional — run once after clone (in Docker when isolation is
+              docker). Prefer <code>uv sync</code> when the repo has a lockfile.
             </span>
           </div>
           <div className="field">
@@ -271,6 +288,67 @@ export function UpstreamForm({
               Space-separated — e.g. run package-script or path/to/server.js
             </span>
           </div>
+          <div className="field">
+            <label htmlFor="upstream-isolation">Isolation</label>
+            <select
+              id="upstream-isolation"
+              className="select"
+              value={isolation}
+              onChange={(e) =>
+                setIsolation(e.target.value as UpstreamIsolation)
+              }
+            >
+              <option value="docker">Docker (recommended)</option>
+              <option value="host">Host (trusted only)</option>
+            </select>
+            <span className="hint">
+              Docker uses slim images + dropped caps; network{" "}
+              <code>none</code> is the lightweight strong default (no egress).
+            </span>
+          </div>
+          {isolation === "docker" ? (
+            <>
+              <div className="field">
+                <label htmlFor="upstream-isolation-network">
+                  Container network
+                </label>
+                <select
+                  id="upstream-isolation-network"
+                  className="select"
+                  value={isolationNetwork}
+                  onChange={(e) =>
+                    setIsolationNetwork(
+                      e.target.value as UpstreamIsolationNetwork,
+                    )
+                  }
+                >
+                  <option value="none">none — no egress (lightweight)</option>
+                  <option value="bridge">bridge — allow egress</option>
+                </select>
+                <span className="hint">
+                  Install always uses bridge briefly. Runtime defaults to none;
+                  switch to bridge only if the MCP must call the network.
+                </span>
+              </div>
+              <div className="field">
+                <label htmlFor="upstream-isolation-image">
+                  Docker image override
+                </label>
+                <input
+                  id="upstream-isolation-image"
+                  className="input mono"
+                  value={isolationImage}
+                  onChange={(e) => setIsolationImage(e.target.value)}
+                  placeholder="Leave blank to auto-pick node or uv slim"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="alert alert-error">
+              Host isolation runs third-party install/runtime on the gateway
+              process — only for repos you fully trust.
+            </div>
+          )}
           <p className="hint">
             Working directory is managed from the git checkout.
           </p>

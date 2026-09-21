@@ -40,6 +40,16 @@ export const upstreams = sqliteTable("upstreams", {
   gitRef: text("git_ref"),
   /** Space-separated one-shot install argv; null/empty = skip install. */
   installCommand: text("install_command"),
+  /** host | docker — how stdio processes are launched. */
+  isolation: text("isolation", { enum: ["host", "docker"] })
+    .notNull()
+    .default("host"),
+  /** none | bridge — Docker network when isolation=docker. */
+  isolationNetwork: text("isolation_network", { enum: ["none", "bridge"] })
+    .notNull()
+    .default("none"),
+  /** Optional Docker image override. */
+  isolationImage: text("isolation_image"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   createdByUserId: text("created_by_user_id").references(() => users.id),
 });

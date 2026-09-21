@@ -58,17 +58,18 @@ Git repository (HTTPS)
 | --- | --- |
 | URL | `http://` or `https://` Git remotes only (no `ssh://`, no `git@…`, no credentials in the URL) |
 | Ref | `gitRef` branch/tag/commit (default `main`) |
-| Install | Optional `installCommand` — space-split argv run once after checkout on **create/update** (not on Rediscover) |
-| Runtime | **stdio only** for Git-sourced MCPs; whatever `command`/`args` you set (`node`, `uv`, `uvx`, `npx`, …) must be on the **gateway host PATH** |
+| Install | Optional `installCommand` — space-split argv run once after checkout on **create/update** (not on Rediscover). With `isolation=docker`, install runs inside the container (bridge network for package downloads). |
+| Isolation | `docker` (default for new Git MCPs) or `host`. Docker uses slim Node/uv images, bind-mounts only the checkout, drops capabilities, and defaults to **network none** (no egress). Set `isolationNetwork=bridge` only if the MCP needs outbound network at runtime. |
+| Runtime | **stdio only** for Git-sourced MCPs. Docker mode does not require `node`/`uv` on the gateway PATH — only Docker. Host mode still needs `command` on PATH. |
 | Working dir | Forced to the checkout directory |
-| Secrets | Encrypted at rest (`GATEWAY_MASTER_KEY`); keys become env vars for the child process |
+| Secrets | Encrypted at rest (`GATEWAY_MASTER_KEY`); keys become env vars for the child (or `-e` into the container) |
 | Failures | Clone/install errors return HTTP 400; runtime issues show **Unhealthy** on the MCP; stderr goes to gateway logs |
 
-**Not implemented:** Docker builds of MCP images, SSH clone, sandbox/container isolation, or re-install on Rediscover.
+**Not implemented:** Building custom MCP Docker images from Dockerfiles, SSH clone, or re-install on Rediscover.
 
-**Trust model:** Yūsetu runs third-party code on the gateway host. Only add repositories you trust. See [Security](#security).
+**Trust model:** Prefer Docker isolation for third-party repos. Host isolation runs install/runtime on the gateway like `npm install && node server.js`. See [Security](#security).
 
-The official Docker image is Node-only (no `git`/`uv` baked in). For Git MCPs, run on a host that has the tools you need, or build a custom image.
+The official Yūsetu Docker image is Node-only (no `git`/`uv` baked in). For Git MCPs with Docker isolation, the gateway host needs Docker (and `git` for clone); runtime tools come from the isolation images.
 
 ---
 
@@ -90,7 +91,9 @@ flowchart TB
   Gateway --> Local[Local stdio MCP]
 
   GitSrc --> Build[Clone + installCommand]
-  Build --> Proc[stdio MCP process]
+  Build --> Iso{isolation}
+  Iso -->|docker| Ctr[Slim container stdio]
+  Iso -->|host| Proc[Host stdio process]
 ```
 
 Clients only talk to Yūsetu. Upstream MCPs are registered in the dashboard (hosted URL, local stdio, or Git checkout).
@@ -257,14 +260,16 @@ That promise is about **this open-source project**. It does not imply a future h
 
 ## Security
 
-**Git MCPs execute third-party code on the gateway host.** There is no sandbox or container isolation in v1. Treat an untrusted repo like running `npm install && node server.js` on that machine.
+**Git MCPs run third-party code.** Default isolation is **Docker**: install and runtime run in disposable slim containers (`node:22-bookworm-slim` or `ghcr.io/astral-sh/uv:python3.12-bookworm-slim`), with capabilities dropped, memory/pids limits, secrets passed only via `-e`, and **network none** at runtime (lightweight strong isolation — no egress unless you set `isolationNetwork=bridge`).
+
+`isolation=host` still executes on the gateway like `npm install && node server.js` — use only for repos you fully trust.
 
 - Only add Git repositories you trust.
 - Keep `GATEWAY_MASTER_KEY` secret; it encrypts upstream credentials. Losing it makes existing ciphertext unreadable.
 - Prefer `REQUIRE_MCP_AUTH=true` (default). Do not expose `/mcp` to the public internet without auth.
 - Git clone URLs cannot embed credentials; private repos need a host-level credential helper or a public URL — plan accordingly.
-- Secrets without a `header.` prefix are passed as environment variables to stdio children; `header.*` becomes HTTP headers for remote MCPs.
-- Official Docker image lacks `git`/`uv`; running Git MCPs in Docker means baking those tools into a custom image and accepting the same trust model.
+- Secrets without a `header.` prefix are passed as environment variables to stdio children (or into the container); `header.*` becomes HTTP headers for remote MCPs.
+- Docker isolation needs a working Docker daemon on the gateway (`GIT_MCP_DEFAULT_ISOLATION=docker`). Override images with `DOCKER_ISOLATION_NODE_IMAGE` / `DOCKER_ISOLATION_UV_IMAGE`.
 
 ---
 
