@@ -36,21 +36,46 @@ Many MCP projects ship as source only. Instead of:
 you can register an HTTPS Git URL in Yūsetu. On create/update the gateway:
 
 1. Clones the repo under `YUSETU_DATA_DIR/mcp-sources/{slug}`
-2. Optionally runs your `installCommand` (argv, no shell)
-3. Spawns the MCP as a **stdio** process (`command` + `args`)
-4. Discovers tools and exposes them on the shared gateway endpoint
+2. Optionally runs your `installCommand` (argv, no shell) — in Docker when isolation is `docker`
+3. Spawns the MCP as **stdio** (`command` + `args`), preferably inside a slim container
 
 ```text
 Git repository (HTTPS)
         ↓
      Yūsetu  (clone + optional install)
         ↓
-  stdio MCP process
+  Docker container (default)  or  host process (trusted only)
         ↓
   Single MCP endpoint (/mcp or stdio bridge)
         ↓
   Cursor / Claude / agents
 ```
+
+### Isolation (Docker by default)
+
+Git MCPs are third-party code. Yūsetu defaults new Git upstreams to **`isolation=docker`** so install and runtime do not run as ordinary processes on the gateway host.
+
+| Mode | What happens | When to use |
+| --- | --- | --- |
+| **`docker`** (default) | Disposable slim container; checkout bind-mounted at `/mcp`; secrets only via `-e` | Any third-party / untrusted repo |
+| **`host`** | `installCommand` + `command` on the gateway like a normal shell spawn | Only repos you fully trust |
+
+**What Docker isolation gives you**
+
+- **Process boundary** — the MCP is not your gateway Node process; a crash or runaway stays in the container.
+- **Filesystem scope** — only the checkout is mounted; the rest of the host is not visible as the working tree.
+- **Least privilege** — capabilities dropped (`--cap-drop=ALL`), `no-new-privileges`, memory and pids limits.
+- **Secret hygiene** — gateway env is not forwarded; only that MCP’s stored secrets are passed in.
+- **No host Node/uv required** — runtime uses `node:22-bookworm-slim` or `ghcr.io/astral-sh/uv:python3.12-bookworm-slim` (overridable). The gateway still needs **Docker** (and **git** for clone).
+
+**Lightweight strong option: `isolationNetwork=none`**
+
+True isolation without a VM. Runtime defaults to **network none** (no egress) — strong and cheap. Install briefly uses **bridge** so `npm install` / `uv sync` can download packages. Switch runtime to **`bridge`** only when the MCP must call the network (APIs, webhooks, etc.).
+
+Configure per MCP in the dashboard (Isolation / Container network / optional image override), or via the admin API. Env defaults:
+
+- `GIT_MCP_DEFAULT_ISOLATION=docker` (or `host`)
+- `DOCKER_ISOLATION_NODE_IMAGE` / `DOCKER_ISOLATION_UV_IMAGE` / `DOCKER_BIN`
 
 ### What works today
 
@@ -59,11 +84,11 @@ Git repository (HTTPS)
 | URL | `http://` or `https://` Git remotes only (no `ssh://`, no `git@…`, no credentials in the URL) |
 | Ref | `gitRef` branch/tag/commit (default `main`) |
 | Install | Optional `installCommand` — space-split argv run once after checkout on **create/update** (not on Rediscover). With `isolation=docker`, install runs inside the container (bridge network for package downloads). |
-| Isolation | `docker` (default for new Git MCPs) or `host`. Docker uses slim Node/uv images, bind-mounts only the checkout, drops capabilities, and defaults to **network none** (no egress). Set `isolationNetwork=bridge` only if the MCP needs outbound network at runtime. |
-| Runtime | **stdio only** for Git-sourced MCPs. Docker mode does not require `node`/`uv` on the gateway PATH — only Docker. Host mode still needs `command` on PATH. |
+| Isolation | See [Isolation](#isolation-docker-by-default) — `docker` (default) or `host`; runtime network `none` (default) or `bridge`. |
+| Runtime | **stdio only** for Git-sourced MCPs. Docker mode needs Docker on the host, not `node`/`uv` on PATH. Host mode still needs `command` on PATH. |
 | Working dir | Forced to the checkout directory |
 | Secrets | Encrypted at rest (`GATEWAY_MASTER_KEY`); keys become env vars for the child (or `-e` into the container) |
-| Failures | Clone/install errors return HTTP 400; runtime issues show **Unhealthy** on the MCP; stderr goes to gateway logs |
+| Failures | Clone/install errors return HTTP 400; missing Docker with `isolation=docker` returns HTTP 400; runtime issues show **Unhealthy**; stderr goes to gateway logs |
 
 **Not implemented:** Building custom MCP Docker images from Dockerfiles, SSH clone, or re-install on Rediscover.
 
@@ -104,7 +129,11 @@ Clients only talk to Yūsetu. Upstream MCPs are registered in the dashboard (hos
 
 ### Git repository MCPs
 
-Point Yūsetu at an MCP Git repository (HTTPS). Yūsetu clones it, optionally installs, runs it as stdio, and exposes its tools on the gateway.
+Point Yūsetu at an MCP Git repository (HTTPS). Yūsetu clones it, optionally installs, runs it as stdio (Docker-isolated by default), and exposes its tools on the gateway.
+
+### Docker isolation for Git MCPs
+
+Third-party Git MCPs run in slim containers with dropped capabilities and default **no network egress**. Host spawn remains available only for trusted repos. See [Isolation](#isolation-docker-by-default).
 
 ### Multiple MCP connections
 
@@ -260,7 +289,7 @@ That promise is about **this open-source project**. It does not imply a future h
 
 ## Security
 
-**Git MCPs run third-party code.** Default isolation is **Docker**: install and runtime run in disposable slim containers (`node:22-bookworm-slim` or `ghcr.io/astral-sh/uv:python3.12-bookworm-slim`), with capabilities dropped, memory/pids limits, secrets passed only via `-e`, and **network none** at runtime (lightweight strong isolation — no egress unless you set `isolationNetwork=bridge`).
+**Git MCPs run third-party code.** Prefer **`isolation=docker`** (the default for new Git MCPs). Details and benefits: [Isolation](#isolation-docker-by-default).
 
 `isolation=host` still executes on the gateway like `npm install && node server.js` — use only for repos you fully trust.
 
