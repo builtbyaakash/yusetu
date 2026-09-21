@@ -20,6 +20,9 @@ export type {
 
 export type UpstreamAuthMode = "none" | "oauth";
 
+export type UpstreamIsolation = "host" | "docker";
+export type UpstreamIsolationNetwork = "none" | "bridge";
+
 export type UpstreamOauthStatus =
   | "disconnected"
   | "pending"
@@ -31,6 +34,9 @@ type UpstreamGitFields = {
   gitUrl?: string;
   gitRef?: string;
   installCommand?: string;
+  isolation?: UpstreamIsolation;
+  isolationNetwork?: UpstreamIsolationNetwork;
+  isolationImage?: string;
 };
 
 /** Dashboard create body — includes OAuth authMode ahead of shared schema. */
@@ -60,6 +66,10 @@ export type Upstream = {
   gitUrl?: string | null;
   gitRef?: string | null;
   installCommand?: string | null;
+  /** host = gateway process; docker = slim container (recommended for Git). */
+  isolation?: UpstreamIsolation | null;
+  isolationNetwork?: UpstreamIsolationNetwork | null;
+  isolationImage?: string | null;
   enabled: boolean;
   timeoutMs: number;
   status?: UpstreamStatus;
@@ -128,6 +138,11 @@ export type UsageAnalytics = {
   catalogTokensIfDirect?: number;
   catalogTokensSaved?: number;
   catalogSavingsPercent?: number | null;
+  discoveryTokensVia?: number;
+  discoveryTokensIfDirect?: number;
+  invokeTokensVia?: number;
+  invokeTokensIfDirect?: number;
+  eventCount?: number;
   mcpCount: number;
   catalogToolCount: number;
   byMcp: Array<{

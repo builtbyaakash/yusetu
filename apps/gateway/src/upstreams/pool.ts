@@ -19,6 +19,11 @@ import { getLogger } from "../logger.js";
 import { decryptSecret, requireMasterKey } from "../secrets/crypto.js";
 import { assertSafeUpstreamUrl } from "../secrets/ssrf.js";
 import {
+  buildDockerStdioLaunch,
+  isDockerAvailable,
+  resolveIsolationImage,
+} from "./docker-isolate.js";
+import {
   createUpstreamOAuthProvider,
   resolvePublicOrigin,
   type UpstreamOAuthProvider,
@@ -275,25 +280,78 @@ export class UpstreamPool {
       if (!upstream.command) {
         throw new Error(`stdio upstream ${upstream.slug} missing command`);
       }
-      const childEnv = { ...getDefaultEnvironment(), ...env };
-      if (upstream.command === "uv" || upstream.command === "uvx") {
-        childEnv.UV_PYTHON_PREFERENCE =
-          childEnv.UV_PYTHON_PREFERENCE ?? "only-managed";
-      }
-      getLogger("data", { upstreamId: upstream.id }).info(
-        {
+
+      const isolation = (upstream.isolation ?? "host") as "host" | "docker";
+      const isolationNetwork = (upstream.isolationNetwork ?? "none") as
+        | "none"
+        | "bridge";
+      const innerArgs = parseArgsJson(upstream.argsJson);
+      let spawnCommand = upstream.command;
+      let spawnArgs = innerArgs;
+      let childEnv: Record<string, string>;
+
+      if (isolation === "docker") {
+        const dockerCfg = {
+          nodeImage: this.#config.dockerIsolationNodeImage,
+          uvImage: this.#config.dockerIsolationUvImage,
+          dockerBin: this.#config.dockerBin,
+        };
+        if (!(await isDockerAvailable(dockerCfg.dockerBin))) {
+          throw new Error(
+            `Upstream ${upstream.slug} requires Docker isolation but Docker is not available. Install Docker or set isolation=host (trusted repos only).`,
+          );
+        }
+        const checkout = upstream.cwd?.trim();
+        if (!checkout) {
+          throw new Error(
+            `Docker isolation for ${upstream.slug} requires a checkout cwd (Git-sourced MCP)`,
+          );
+        }
+        const image = resolveIsolationImage(
+          upstream.command,
+          upstream.isolationImage,
+          dockerCfg,
+        );
+        // Only that MCP's secrets — not the gateway process environment.
+        const launch = buildDockerStdioLaunch({
           slug: upstream.slug,
-          envKeys: Object.keys(env).sort(),
-        },
-        "spawning stdio upstream with secrets",
-      );
+          checkoutAbs: checkout,
+          command: upstream.command,
+          args: innerArgs,
+          env: {
+            ...env,
+            UV_PYTHON_PREFERENCE: env.UV_PYTHON_PREFERENCE ?? "only-managed",
+          },
+          network: isolationNetwork,
+          image,
+          dockerBin: dockerCfg.dockerBin,
+        });
+        spawnCommand = launch.command;
+        spawnArgs = launch.args;
+        // Docker CLI needs host PATH; container gets secrets via -e flags above.
+        childEnv = { ...getDefaultEnvironment() };
+      } else {
+        childEnv = { ...getDefaultEnvironment(), ...env };
+        if (upstream.command === "uv" || upstream.command === "uvx") {
+          childEnv.UV_PYTHON_PREFERENCE =
+            childEnv.UV_PYTHON_PREFERENCE ?? "only-managed";
+        }
+        getLogger("data", { upstreamId: upstream.id }).info(
+          {
+            slug: upstream.slug,
+            envKeys: Object.keys(env).sort(),
+            isolation: "host",
+          },
+          "spawning stdio upstream on host (no container isolation)",
+        );
+      }
+
       const transport = new StdioClientTransport({
-        command: upstream.command,
-        args: parseArgsJson(upstream.argsJson),
-        cwd: upstream.cwd ?? undefined,
+        command: spawnCommand,
+        args: spawnArgs,
+        cwd: isolation === "docker" ? undefined : upstream.cwd ?? undefined,
         env: childEnv,
-        // Must drain piped stderr or verbose servers (e.g. uvx mcp-server-appwrite)
-        // fill the pipe buffer and deadlock the MCP handshake until timeout.
+        // Must drain piped stderr or verbose servers fill the pipe and deadlock.
         stderr: "pipe",
       });
       const stderrLog = getLogger("data", {

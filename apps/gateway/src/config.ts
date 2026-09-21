@@ -49,6 +49,11 @@ export type GatewayConfig = {
   inlineTinyMcps: boolean;
   /** When true, compress inputSchema returned by yusetu_get_tool. Default true. */
   schemaCompression: boolean;
+  /** Default isolation for new Git-sourced MCPs when client omits isolation. */
+  gitMcpDefaultIsolation: "host" | "docker";
+  dockerIsolationNodeImage: string;
+  dockerIsolationUvImage: string;
+  dockerBin: string;
   logLevel: string;
   logToolArgs: LogToolArgsMode;
   dashboardDist: string;
@@ -64,6 +69,10 @@ export function loadConfig(): GatewayConfig {
       ? logToolArgsRaw
       : "none";
 
+  const gitIso = (process.env.GIT_MCP_DEFAULT_ISOLATION ?? "docker")
+    .trim()
+    .toLowerCase();
+
   return {
     host: process.env.HOST?.trim() || "127.0.0.1",
     port: Number(process.env.PORT ?? "8080") || 8080,
@@ -76,6 +85,13 @@ export function loadConfig(): GatewayConfig {
     toolPresentation: parseToolPresentation(process.env.TOOL_PRESENTATION),
     inlineTinyMcps: parseBool(process.env.INLINE_TINY_MCPS, false),
     schemaCompression: parseBool(process.env.SCHEMA_COMPRESSION, true),
+    gitMcpDefaultIsolation: gitIso === "host" ? "host" : "docker",
+    dockerIsolationNodeImage:
+      process.env.DOCKER_ISOLATION_NODE_IMAGE?.trim() || "node:22-bookworm-slim",
+    dockerIsolationUvImage:
+      process.env.DOCKER_ISOLATION_UV_IMAGE?.trim() ||
+      "ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
+    dockerBin: process.env.DOCKER_BIN?.trim() || "docker",
     logLevel: process.env.LOG_LEVEL?.trim() || "info",
     logToolArgs,
     dashboardDist: path.resolve(GATEWAY_ROOT, "../dashboard/dist"),

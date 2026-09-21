@@ -25,6 +25,11 @@ import { assertSafeUpstreamUrl } from "../secrets/ssrf.js";
 import { detectHttpTransport } from "../upstreams/detect-transport.js";
 import { discoverUpstreamTools } from "../upstreams/discover.js";
 import {
+  isDockerAvailable,
+  resolveIsolationImage,
+  runInstallInDocker,
+} from "../upstreams/docker-isolate.js";
+import {
   ensureGitCheckout,
   removeMcpSourceDir,
   runInstallCommand,
@@ -82,6 +87,9 @@ function serializeUpstream(
     gitUrl: row.gitUrl,
     gitRef: row.gitRef,
     installCommand: row.installCommand,
+    isolation: (row.isolation ?? "host") as "host" | "docker",
+    isolationNetwork: (row.isolationNetwork ?? "none") as "none" | "bridge",
+    isolationImage: row.isolationImage,
     enabled: row.enabled,
     timeoutMs: row.timeoutMs,
     authMode,
@@ -95,6 +103,42 @@ function serializeUpstream(
       extras?.status ??
       (row.enabled ? ("unknown" as const) : ("disabled" as const)),
   };
+}
+
+async function assertDockerReady(config: GatewayConfig): Promise<void> {
+  if (!(await isDockerAvailable(config.dockerBin))) {
+    throw new Error(
+      "Docker isolation requires Docker. Install Docker or set isolation to host (trusted repos only).",
+    );
+  }
+}
+
+async function installGitCheckout(input: {
+  config: GatewayConfig;
+  slug: string;
+  checkout: string;
+  installCommand: string;
+  command: string | null | undefined;
+  isolation: "host" | "docker";
+  isolationImage: string | null;
+}): Promise<void> {
+  if (input.isolation !== "docker") {
+    await runInstallCommand(input.checkout, input.installCommand);
+    return;
+  }
+  await assertDockerReady(input.config);
+  const image = resolveIsolationImage(input.command ?? "node", input.isolationImage, {
+    nodeImage: input.config.dockerIsolationNodeImage,
+    uvImage: input.config.dockerIsolationUvImage,
+    dockerBin: input.config.dockerBin,
+  });
+  await runInstallInDocker({
+    slug: input.slug,
+    checkoutAbs: input.checkout,
+    installCommand: input.installCommand,
+    image,
+    dockerBin: input.config.dockerBin,
+  });
 }
 
 async function validateHttpUrl(
@@ -320,7 +364,32 @@ export function createUpstreamHandlers(
       const gitUrl = emptyToNull(data.gitUrl);
       const gitRef = emptyToNull(data.gitRef);
       const installCommand = emptyToNull(data.installCommand);
+      const isolation =
+        data.isolation ??
+        (gitUrl ? config.gitMcpDefaultIsolation : "host");
+      const isolationNetwork = data.isolationNetwork ?? "none";
+      const isolationImage = emptyToNull(data.isolationImage);
       let cwd = data.cwd ?? null;
+
+      if (isolation === "docker") {
+        try {
+          await assertDockerReady(config);
+        } catch (err) {
+          return c.json(
+            { error: err instanceof Error ? err.message : String(err) },
+            400,
+          );
+        }
+        if (!gitUrl && !data.cwd?.trim()) {
+          return c.json(
+            {
+              error:
+                "Docker isolation requires a Git-sourced MCP (or an explicit cwd to bind-mount)",
+            },
+            400,
+          );
+        }
+      }
 
       if (gitUrl) {
         try {
@@ -331,7 +400,15 @@ export function createUpstreamHandlers(
             gitRef,
           });
           if (installCommand) {
-            await runInstallCommand(checkout, installCommand);
+            await installGitCheckout({
+              config,
+              slug,
+              checkout,
+              installCommand,
+              command: data.command,
+              isolation,
+              isolationImage,
+            });
           }
           cwd = checkout;
         } catch (err) {
@@ -359,6 +436,9 @@ export function createUpstreamHandlers(
             gitUrl,
             gitRef,
             installCommand,
+            isolation,
+            isolationNetwork,
+            isolationImage,
             enabled: data.enabled,
             timeoutMs: data.timeoutMs,
             authMode: data.authMode,
@@ -510,11 +590,39 @@ export function createUpstreamHandlers(
         data.installCommand !== undefined
           ? emptyToNull(data.installCommand)
           : row.installCommand;
+      const nextIsolation =
+        data.isolation !== undefined
+          ? data.isolation
+          : ((row.isolation ?? "host") as "host" | "docker");
+      const nextIsolationNetwork =
+        data.isolationNetwork !== undefined
+          ? data.isolationNetwork
+          : ((row.isolationNetwork ?? "none") as "none" | "bridge");
+      const nextIsolationImage =
+        data.isolationImage !== undefined
+          ? emptyToNull(data.isolationImage)
+          : row.isolationImage;
+
+      if (nextIsolation === "docker") {
+        try {
+          await assertDockerReady(config);
+        } catch (err) {
+          return c.json(
+            { error: err instanceof Error ? err.message : String(err) },
+            400,
+          );
+        }
+      }
 
       const gitSourceChanged =
         nextGitUrl !== row.gitUrl ||
         nextGitRef !== row.gitRef ||
         nextInstallCommand !== row.installCommand;
+
+      const isolationChanged =
+        nextIsolation !== (row.isolation ?? "host") ||
+        nextIsolationNetwork !== (row.isolationNetwork ?? "none") ||
+        nextIsolationImage !== row.isolationImage;
 
       let cwd =
         data.cwd !== undefined ? (data.cwd ?? null) : row.cwd;
@@ -528,7 +636,16 @@ export function createUpstreamHandlers(
             gitRef: nextGitRef,
           });
           if (nextInstallCommand) {
-            await runInstallCommand(checkout, nextInstallCommand);
+            await installGitCheckout({
+              config,
+              slug: row.slug,
+              checkout,
+              installCommand: nextInstallCommand,
+              command:
+                data.command !== undefined ? data.command : row.command,
+              isolation: nextIsolation,
+              isolationImage: nextIsolationImage,
+            });
           }
           cwd = checkout;
         } catch (err) {
@@ -564,6 +681,9 @@ export function createUpstreamHandlers(
           gitUrl: nextGitUrl,
           gitRef: nextGitRef,
           installCommand: nextInstallCommand,
+          isolation: nextIsolation,
+          isolationNetwork: nextIsolationNetwork,
+          isolationImage: nextIsolationImage,
           enabled: data.enabled ?? row.enabled,
           timeoutMs: data.timeoutMs ?? row.timeoutMs,
           authMode: nextAuthMode,
@@ -597,6 +717,7 @@ export function createUpstreamHandlers(
           JSON.stringify(data.argsJson) !== row.argsJson) ||
         cwd !== row.cwd ||
         gitSourceChanged ||
+        isolationChanged ||
         resolvedTransport !== row.transport;
 
       let discovered: number | undefined;

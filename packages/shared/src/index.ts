@@ -22,6 +22,16 @@ export type LoginBody = z.infer<typeof LoginBodySchema>;
 export const UpstreamAuthModeSchema = z.enum(["none", "oauth"]);
 export type UpstreamAuthMode = z.infer<typeof UpstreamAuthModeSchema>;
 
+/** How stdio / Git MCPs are executed on the gateway. */
+export const UpstreamIsolationSchema = z.enum(["host", "docker"]);
+export type UpstreamIsolation = z.infer<typeof UpstreamIsolationSchema>;
+
+/** Docker network mode when isolation=docker. */
+export const UpstreamIsolationNetworkSchema = z.enum(["none", "bridge"]);
+export type UpstreamIsolationNetwork = z.infer<
+  typeof UpstreamIsolationNetworkSchema
+>;
+
 /** Derive a URL-safe slug from an upstream display name (max 64 chars). */
 export function slugifyUpstreamName(name: string): string {
   const slug = name
@@ -46,6 +56,16 @@ const CreateUpstreamObjectSchema = z.object({
   gitRef: z.union([z.string().max(128), z.literal("")]).optional(),
   /** Space-separated argv for one-shot install (e.g. `npm install`); omit/empty = skip. */
   installCommand: z.union([z.string().max(512), z.literal("")]).optional(),
+  /**
+   * host = spawn on gateway (trusted only).
+   * docker = run in a disposable slim container (recommended for Git MCPs).
+   * Omitted: gateway applies GIT_MCP_DEFAULT_ISOLATION for gitUrl, else host.
+   */
+  isolation: UpstreamIsolationSchema.optional(),
+  /** When isolation=docker: none (default, no egress) or bridge (needs egress). */
+  isolationNetwork: UpstreamIsolationNetworkSchema.optional(),
+  /** Optional Docker image override (otherwise inferred from command). */
+  isolationImage: z.union([z.string().max(256), z.literal("")]).optional(),
   enabled: z.boolean().default(true),
   timeoutMs: z.number().int().positive().max(600_000).default(30_000),
   authMode: UpstreamAuthModeSchema.default("none"),
@@ -57,6 +77,7 @@ function refineGitSourceUpstream(
     gitUrl?: string;
     transport?: UpstreamTransport;
     command?: string;
+    isolation?: UpstreamIsolation;
   },
   ctx: z.RefinementCtx,
 ): void {
