@@ -51,7 +51,8 @@ import {
 function isNonSpaPath(pathname: string): boolean {
   return (
     pathname.startsWith("/api") ||
-    pathname.startsWith("/mcp") ||
+    pathname === "/mcp" ||
+    pathname.startsWith("/mcp/") ||
     pathname.startsWith("/oauth") ||
     pathname.startsWith("/.well-known")
   );

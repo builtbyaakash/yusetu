@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { authApi } from "../api";
+import { ThemeToggle } from "../lib/theme";
 
 type LoginPageProps = {
   setupRequired: boolean;
@@ -49,6 +50,7 @@ export function LoginPage({
 
   return (
     <div className="auth-layout">
+      <ThemeToggle className="auth-theme-toggle" />
       <div className="auth-card">
         <img
           className="auth-logo"

@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import type { AuthMeResponse } from "../api/types";
+import { ThemeToggle } from "../lib/theme";
 import { UserAvatar } from "./UserAvatar";
 
 const baseLinks = [
@@ -62,14 +63,17 @@ export function Layout({ user, onLogout, loggingOut, children }: LayoutProps) {
             <UserAvatar username={user.username} />
             <span className="user-chip-name">{user.username}</span>
           </div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={onLogout}
-            disabled={loggingOut}
-          >
-            {loggingOut ? "Signing out…" : "Sign out"}
-          </button>
+          <div className="sidebar-footer-actions">
+            <ThemeToggle />
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onLogout}
+              disabled={loggingOut}
+            >
+              {loggingOut ? "Signing out…" : "Sign out"}
+            </button>
+          </div>
         </div>
       </aside>
       <main className="main">{children}</main>
