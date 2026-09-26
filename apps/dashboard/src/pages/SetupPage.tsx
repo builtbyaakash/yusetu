@@ -4,6 +4,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { authApi } from "../api";
 import type { AuthMeResponse, HealthResponse } from "../api/types";
+import { ThemeToggle } from "../lib/theme";
 
 type SetupPageProps = {
   setupRequired: boolean;
@@ -64,6 +65,7 @@ export function SetupPage({ setupRequired, onSuccess }: SetupPageProps) {
 
   return (
     <div className="auth-layout">
+      <ThemeToggle className="auth-theme-toggle" />
       <div className="auth-card">
         <img
           className="auth-logo"

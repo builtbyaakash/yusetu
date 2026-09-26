@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { authApi } from "../api";
+import { ThemeToggle } from "../lib/theme";
 
 type JoinPageProps = {
   setupRequired: boolean;
@@ -60,6 +61,7 @@ export function JoinPage({
 
   return (
     <div className="auth-layout">
+      <ThemeToggle className="auth-theme-toggle" />
       <div className="auth-card">
         <img className="auth-logo" src="/yusetu-mark.png" alt="" />
         <div className="auth-brand-name">Yūsetu</div>

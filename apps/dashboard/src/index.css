@@ -1,6 +1,6 @@
-:root {
-  color-scheme: light dark;
-  /* Light-first — logo sits on white: navy wordmark + blue gateway */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
   --bg: #f4f7fb;
   --bg-elevated: #ffffff;
   --bg-muted: #e8eef6;
@@ -17,7 +17,7 @@
   --danger: #f43f5e;
   --danger-bg: rgba(244, 63, 94, 0.08);
   --success: #0d9488;
-  --success-bg: rgba(45, 212, 191, 0.12);
+  --success-bg: rgba(13, 148, 136, 0.12);
   --warning: #ea580c;
   --focus: #1e5eff;
   --ring: rgba(30, 94, 255, 0.22);
@@ -29,39 +29,38 @@
   --font: "Plus Jakarta Sans", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
   --nav-width: 240px;
-  /* Accent fan (logo) — available for subtle atmosphere */
   --fan-sky: #38bdf8;
   --fan-teal: #2dd4bf;
-  --fan-purple: #8b5cf6;
-  --fan-orange: #fb923c;
-  --fan-coral: #f43f5e;
+  --atmosphere-a: rgba(30, 94, 255, 0.06);
+  --atmosphere-b: rgba(45, 212, 191, 0.05);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0a192f;
-    --bg-elevated: #0f2137;
-    --bg-muted: #152a45;
-    --bg-sidebar: #071525;
-    --border: #1e3a5f;
-    --border-strong: #2e4a6e;
-    --text: #e8eef5;
-    --text-muted: #8b9cb3;
-    --text-faint: #5c7390;
-    --accent: #1e5eff;
-    --accent-hover: #4c8bff;
-    --accent-muted: rgba(30, 94, 255, 0.15);
-    --accent-text: #ffffff;
-    --danger: #f43f5e;
-    --danger-bg: rgba(244, 63, 94, 0.12);
-    --success: #2dd4bf;
-    --success-bg: rgba(45, 212, 191, 0.12);
-    --warning: #fb923c;
-    --focus: #1e5eff;
-    --ring: rgba(30, 94, 255, 0.3);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.32);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  }
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a192f;
+  --bg-elevated: #0f2137;
+  --bg-muted: #152a45;
+  --bg-sidebar: #071525;
+  --border: #1e3a5f;
+  --border-strong: #2e4a6e;
+  --text: #e8eef5;
+  --text-muted: #8b9cb3;
+  --text-faint: #5c7390;
+  --accent: #1e5eff;
+  --accent-hover: #4c8bff;
+  --accent-muted: rgba(30, 94, 255, 0.15);
+  --accent-text: #ffffff;
+  --danger: #f43f5e;
+  --danger-bg: rgba(244, 63, 94, 0.12);
+  --success: #2dd4bf;
+  --success-bg: rgba(45, 212, 191, 0.12);
+  --warning: #fb923c;
+  --focus: #1e5eff;
+  --ring: rgba(30, 94, 255, 0.3);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.32);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --atmosphere-a: rgba(30, 94, 255, 0.1);
+  --atmosphere-b: rgba(45, 212, 191, 0.06);
 }
 
 *,
@@ -84,22 +83,22 @@ body {
   color: var(--text);
   background-color: var(--bg);
   background-image:
-    radial-gradient(ellipse 900px 520px at 8% -8%, rgba(30, 94, 255, 0.07), transparent 55%),
-    radial-gradient(ellipse 700px 480px at 96% 4%, rgba(56, 189, 248, 0.06), transparent 50%),
-    radial-gradient(ellipse 600px 400px at 50% 100%, rgba(139, 92, 246, 0.04), transparent 60%),
-    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    radial-gradient(ellipse 900px 520px at 8% -8%, var(--atmosphere-a), transparent 55%),
+    radial-gradient(ellipse 700px 480px at 96% 4%, var(--atmosphere-b), transparent 50%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
-    background-image:
-      radial-gradient(ellipse 900px 520px at 8% -8%, rgba(30, 94, 255, 0.12), transparent 55%),
-      radial-gradient(ellipse 700px 480px at 96% 4%, rgba(56, 189, 248, 0.07), transparent 50%),
-      radial-gradient(ellipse 600px 400px at 50% 100%, rgba(139, 92, 246, 0.05), transparent 60%),
-      url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -229,6 +228,11 @@ code,
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+.nav-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .sidebar-footer {
   margin-top: auto;
   padding: 0.85rem 0.65rem 0.35rem;
@@ -236,6 +240,25 @@ code,
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+}
+
+.sidebar-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.theme-toggle {
+  gap: 0.35rem;
+}
+
+.theme-toggle-icon {
+  flex-shrink: 0;
+}
+
+.theme-toggle-label {
+  font-size: 0.82rem;
 }
 
 .user-chip {
@@ -295,10 +318,17 @@ code,
 }
 
 .auth-layout {
+  position: relative;
   min-height: 100%;
   display: grid;
   place-items: center;
   padding: 2rem 1rem;
+}
+
+.auth-theme-toggle {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
 }
 
 .auth-card {
@@ -314,18 +344,7 @@ code,
 .auth-card .brand-name {
   font-size: 1.8rem;
   margin-bottom: 0.25rem;
-  background: linear-gradient(135deg, #0b1f3a 35%, #1e5eff 78%, #38bdf8);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-@media (prefers-color-scheme: dark) {
-  .auth-card .brand-name {
-    background: linear-gradient(135deg, #e8eef5 30%, #1e5eff 72%, #38bdf8);
-    -webkit-background-clip: text;
-    background-clip: text;
-  }
+  color: var(--text);
 }
 
 .form {
