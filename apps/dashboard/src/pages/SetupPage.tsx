@@ -22,8 +22,6 @@ export function SetupPage({ setupRequired, onSuccess }: SetupPageProps) {
   const mutation = useMutation({
     mutationFn: () => authApi.setup({ username, password }),
     onSuccess: (me: AuthMeResponse) => {
-      // Optimistically leave first-run mode so BootGate does not bounce
-      // back to /setup before health refetch completes.
       qc.setQueryData<HealthResponse>(["health"], (prev) =>
         prev ? { ...prev, setupRequired: false } : prev,
       );

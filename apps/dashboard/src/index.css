@@ -671,7 +671,6 @@ tbody tr:hover td {
   padding-right: 0.85rem;
 }
 
-/* Tools catalog table */
 .tools-table .col-tool-name {
   width: 1%;
   white-space: nowrap;
@@ -1266,7 +1265,6 @@ tbody tr:hover td {
   }
 }
 
-/* brand assets — icon mark only; name/tagline are separate UI text */
 .brand {
   padding: 0.25rem 0.5rem 0.75rem;
 }
