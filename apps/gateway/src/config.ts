@@ -4,9 +4,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-/** apps/gateway/src → repo root */
-export const REPO_ROOT = path.resolve(__dirname, "../../..");
-export const GATEWAY_ROOT = path.resolve(__dirname, "../..");
+/** `apps/gateway` whether loaded from `src/` or `dist/`. */
+export const GATEWAY_ROOT = path.resolve(
+  __dirname,
+  path.basename(__dirname) === "src" || path.basename(__dirname) === "dist"
+    ? ".."
+    : ".",
+);
+/** Monorepo root. */
+export const REPO_ROOT = path.resolve(GATEWAY_ROOT, "../..");
 
 loadDotenv({ path: path.join(REPO_ROOT, ".env") });
 
