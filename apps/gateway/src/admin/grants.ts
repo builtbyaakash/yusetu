@@ -1,8 +1,8 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { CreateUpstreamGrantSchema } from "@yusetu/shared";
-import { getDb } from "../db/index.js";
-import { upstreamGrants, upstreams, users } from "../db/schema.js";
+import { getDb, getSqlite } from "../db/index.js";
+import { tools, upstreamGrants, upstreams, users } from "../db/schema.js";
 import { getLogger } from "../logger.js";
 
 function serializeGrant(row: {
@@ -35,6 +35,123 @@ function loadSharedUpstream(upstreamId: string) {
     };
   }
   return { row };
+}
+
+function serializeUpstreamBrief(row: {
+  id: string;
+  slug: string;
+  name: string;
+  visibility: "shared" | "personal";
+  ownerUserId: string | null;
+  enabled: boolean;
+  createdAt: Date;
+  createdByUserId: string | null;
+}) {
+  const toolCount =
+    getDb()
+      .select({ value: count() })
+      .from(tools)
+      .where(eq(tools.upstreamId, row.id))
+      .get()?.value ?? 0;
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    visibility: row.visibility,
+    ownerUserId: row.ownerUserId,
+    enabled: row.enabled,
+    createdAt: row.createdAt.toISOString(),
+    createdByUserId: row.createdByUserId,
+    toolCount,
+  };
+}
+
+/**
+ * ShareLifecycle: personal → shared.
+ * Clears owner_user_id. Elevated only (route middleware).
+ */
+export async function promoteToShared(c: Context) {
+  const upstreamId = c.req.param("id");
+  if (!upstreamId) return c.json({ error: "Missing id" }, 400);
+
+  const db = getDb();
+  const row = db
+    .select()
+    .from(upstreams)
+    .where(eq(upstreams.id, upstreamId))
+    .get();
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (row.visibility === "shared") {
+    return c.json(serializeUpstreamBrief(row));
+  }
+  if (row.visibility !== "personal") {
+    return c.json({ error: "Only personal MCPs can be shared" }, 400);
+  }
+
+  db.update(upstreams)
+    .set({ visibility: "shared", ownerUserId: null })
+    .where(eq(upstreams.id, upstreamId))
+    .run();
+
+  const updated = db
+    .select()
+    .from(upstreams)
+    .where(eq(upstreams.id, upstreamId))
+    .get()!;
+
+  getLogger("control").info(
+    { upstreamId },
+    "upstream promoted to shared",
+  );
+  return c.json(serializeUpstreamBrief(updated));
+}
+
+/**
+ * ShareLifecycle: shared → personal.
+ * Sets owner to acting elevated user, deletes all grants.
+ */
+export async function unshareToPersonal(c: Context) {
+  const upstreamId = c.req.param("id");
+  if (!upstreamId) return c.json({ error: "Missing id" }, 400);
+
+  const user = c.get("user") as { id: string };
+  const db = getDb();
+  const row = db
+    .select()
+    .from(upstreams)
+    .where(eq(upstreams.id, upstreamId))
+    .get();
+  if (!row) return c.json({ error: "Not found" }, 404);
+  if (row.visibility === "personal") {
+    return c.json(serializeUpstreamBrief(row));
+  }
+  if (row.visibility !== "shared") {
+    return c.json({ error: "Only shared MCPs can be unshared" }, 400);
+  }
+
+  const sqlite = getSqlite();
+  const tx = sqlite.transaction(() => {
+    db.delete(upstreamGrants)
+      .where(eq(upstreamGrants.upstreamId, upstreamId))
+      .run();
+    db.update(upstreams)
+      .set({ visibility: "personal", ownerUserId: user.id })
+      .where(eq(upstreams.id, upstreamId))
+      .run();
+  });
+  tx();
+
+  const updated = db
+    .select()
+    .from(upstreams)
+    .where(eq(upstreams.id, upstreamId))
+    .get()!;
+
+  getLogger("control").info(
+    { upstreamId, ownerUserId: user.id },
+    "upstream unshared to personal",
+  );
+  return c.json(serializeUpstreamBrief(updated));
 }
 
 export async function listUpstreamGrants(c: Context) {

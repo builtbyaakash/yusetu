@@ -90,8 +90,19 @@ async function main() {
       authMode: "none",
     }),
   });
-  assert(sharedRes.status === 201, `create shared ${sharedRes.status}`);
-  const shared = await sharedRes.json();
+  assert(sharedRes.status === 201, `create ${sharedRes.status}`);
+  const created = await sharedRes.json();
+  assert(created.visibility === "personal", "create always personal");
+  assert(created.ownerUserId, "create sets ownerUserId");
+
+  const promoteRes = await app.request(`/api/upstreams/${created.id}/promote`, {
+    method: "POST",
+    headers: { cookie: ownerCookie },
+  });
+  assert(promoteRes.status === 200, `promote ${promoteRes.status}`);
+  const shared = await promoteRes.json();
+  assert(shared.visibility === "shared", "promoted to shared");
+  assert(shared.ownerUserId == null, "shared owner null");
   const sharedId = shared.id;
 
   const inviteRes = await app.request("/api/team/invites", {
@@ -240,6 +251,48 @@ async function main() {
     },
   );
   assert(personalGrant.status === 400, `personal grant ${personalGrant.status}`);
+
+  // Unshare: shared → personal, grants wiped
+  const regrant = await app.request(`/api/upstreams/${sharedId}/grants`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: ownerCookie,
+    },
+    body: JSON.stringify({ userId: member.id }),
+  });
+  assert(regrant.status === 201, `regrant ${regrant.status}`);
+  assert(
+    visibleUpstreamIdsForUser(member.id).has(sharedId),
+    "member sees before unshare",
+  );
+
+  const unshareRes = await app.request(`/api/upstreams/${sharedId}/unshare`, {
+    method: "POST",
+    headers: { cookie: ownerCookie },
+  });
+  assert(unshareRes.status === 200, `unshare ${unshareRes.status}`);
+  const unshared = await unshareRes.json();
+  assert(unshared.visibility === "personal", "unshared is personal");
+  assert(unshared.ownerUserId, "unshare sets owner");
+  assert(
+    !visibleUpstreamIdsForUser(member.id).has(sharedId),
+    "member loses after unshare",
+  );
+  const grantsAfterUnshare = await app.request(
+    `/api/upstreams/${sharedId}/grants`,
+    { headers: { cookie: ownerCookie } },
+  );
+  assert(
+    grantsAfterUnshare.status === 400,
+    `grants on personal ${grantsAfterUnshare.status}`,
+  );
+
+  const memberUnshare = await app.request(`/api/upstreams/${sharedId}/unshare`, {
+    method: "POST",
+    headers: { cookie: memberCookie },
+  });
+  assert(memberUnshare.status === 403, `member unshare ${memberUnshare.status}`);
 
   closeDb();
   fs.rmSync(dataDir, { recursive: true, force: true });

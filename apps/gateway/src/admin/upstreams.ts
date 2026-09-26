@@ -526,12 +526,9 @@ export function createUpstreamHandlers(
       }
 
       const user = sessionUser(c);
-      const elevated = isElevatedRole(parseRole(user.role));
-      const visibility = data.visibility ?? "personal";
-      if (!elevated && visibility === "shared") {
-        return c.json({ error: "Forbidden" }, 403);
-      }
-      const ownerUserId = visibility === "personal" ? user.id : null;
+      // Personal-first: create always Mine. Ignore client visibility.
+      const visibility = "personal" as const;
+      const ownerUserId = user.id;
 
       const db = getDb();
       const baseSlug = slugifyUpstreamName(data.name);

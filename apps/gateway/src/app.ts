@@ -26,7 +26,9 @@ import { requireElevated, requireSession } from "./middleware/auth.js";
 import {
   createUpstreamGrant,
   listUpstreamGrants,
+  promoteToShared,
   revokeUpstreamGrant,
+  unshareToPersonal,
 } from "./admin/grants.js";
 import {
   createInvite,
@@ -112,6 +114,16 @@ export function createApp(
     "/api/upstreams/:id/grants/:userId",
     requireElevated,
     revokeUpstreamGrant,
+  );
+  app.post(
+    "/api/upstreams/:id/promote",
+    requireElevated,
+    promoteToShared,
+  );
+  app.post(
+    "/api/upstreams/:id/unshare",
+    requireElevated,
+    unshareToPersonal,
   );
   app.post("/api/upstreams/:id/discover", requireSession, (c) =>
     upstreams.discover(c),

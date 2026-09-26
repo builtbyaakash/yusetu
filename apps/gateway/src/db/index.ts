@@ -3,6 +3,7 @@ import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3"
 import path from "node:path";
 import * as schema from "./schema.js";
 import { migrateGrantsV1 } from "./migrate-grants.js";
+import { migratePersonalFirstV1 } from "./migrate-personal-first.js";
 import { migrateTeamsV1 } from "./migrate-teams.js";
 
 export type Db = BetterSQLite3Database<typeof schema>;
@@ -60,7 +61,7 @@ CREATE TABLE IF NOT EXISTS upstreams (
   isolation TEXT NOT NULL DEFAULT 'host',
   isolation_network TEXT NOT NULL DEFAULT 'none',
   isolation_image TEXT,
-  visibility TEXT NOT NULL DEFAULT 'shared',
+  visibility TEXT NOT NULL DEFAULT 'personal',
   owner_user_id TEXT,
   created_at INTEGER NOT NULL,
   created_by_user_id TEXT REFERENCES users(id)
@@ -285,6 +286,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_events_mcp_slug ON usage_events(mcp_slug);
 
   migrateTeamsV1(sqlite, dataDir);
   migrateGrantsV1(sqlite);
+  migratePersonalFirstV1(sqlite);
 }
 
 export function openDb(dbPath: string): Db {
