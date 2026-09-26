@@ -35,7 +35,7 @@ export function PlaygroundPage() {
   useEffect(() => {
     if (!selectedTool) return;
     setArgsText(formatSampleArgs(selectedTool.inputSchema));
-    // Only when the selected tool identity changes — not on list refetch.
+    // Only when the selected tool identity changes, not on list refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
   }, [selectedTool?.id, selectedTool?.exposedName]);
 
@@ -80,7 +80,7 @@ export function PlaygroundPage() {
   }
 
   return (
-    <div>
+    <div className="playground">
       <div className="page-header">
         <div>
           <h1>Playground</h1>
@@ -88,89 +88,94 @@ export function PlaygroundPage() {
         </div>
       </div>
 
-      <form className="form" onSubmit={handleSubmit} style={{ maxWidth: 720 }}>
-        {(localError || toolsQuery.error) && (
-          <div className="alert alert-error">
-            {localError ??
-              (toolsQuery.error instanceof ApiError
-                ? toolsQuery.error.message
-                : "Failed to load tools.")}
-          </div>
-        )}
+      <section className="page-section">
+        <form className="form" onSubmit={handleSubmit}>
+          {(localError || toolsQuery.error) && (
+            <div className="alert alert-error">
+              {localError ??
+                (toolsQuery.error instanceof ApiError
+                  ? toolsQuery.error.message
+                  : "Failed to load tools.")}
+            </div>
+          )}
 
-        <div className="field">
-          <label htmlFor="playground-tool">Tool</label>
-          <select
-            id="playground-tool"
-            className="select mono"
-            value={tool}
-            onChange={(e) => setTool(e.target.value)}
-            disabled={toolsQuery.isLoading || enabledTools.length === 0}
-          >
-            {enabledTools.length === 0 ? (
-              <option value="">No enabled tools</option>
-            ) : (
-              enabledTools.map((t) => (
-                <option key={t.id} value={t.exposedName}>
-                  {t.exposedName}
-                </option>
-              ))
-            )}
-          </select>
-        </div>
-
-        <div className="field">
-          <div className="toolbar" style={{ marginBottom: 0 }}>
-            <label htmlFor="playground-args" style={{ margin: 0 }}>
-              Arguments (JSON)
-            </label>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={resetSample}
-              disabled={!selectedTool}
+          <div className="field">
+            <label htmlFor="playground-tool">Tool</label>
+            <select
+              id="playground-tool"
+              className="select mono"
+              value={tool}
+              onChange={(e) => setTool(e.target.value)}
+              disabled={toolsQuery.isLoading || enabledTools.length === 0}
             >
-              Reset sample
+              {enabledTools.length === 0 ? (
+                <option value="">No enabled tools</option>
+              ) : (
+                enabledTools.map((t) => (
+                  <option key={t.id} value={t.exposedName}>
+                    {t.exposedName}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="field">
+            <div className="section-heading-row">
+              <label htmlFor="playground-args">Arguments (JSON)</label>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={resetSample}
+                disabled={!selectedTool}
+              >
+                Reset sample
+              </button>
+            </div>
+            <p className="hint">
+              Sample from this tool&apos;s input schema. Edit before calling.
+            </p>
+            <textarea
+              id="playground-args"
+              className="textarea"
+              value={argsText}
+              onChange={(e) => setArgsText(e.target.value)}
+              spellCheck={false}
+            />
+          </div>
+
+          <div className="form-actions">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={callMutation.isPending || !tool}
+            >
+              {callMutation.isPending ? "Calling…" : "Call tool"}
             </button>
           </div>
-          <p className="hint">
-            Sample from this tool&apos;s input schema — edit before calling.
-          </p>
-          <textarea
-            id="playground-args"
-            className="textarea"
-            value={argsText}
-            onChange={(e) => setArgsText(e.target.value)}
-            spellCheck={false}
-          />
-        </div>
-
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={callMutation.isPending || !tool}
-        >
-          {callMutation.isPending ? "Calling…" : "Call tool"}
-        </button>
-      </form>
+        </form>
+      </section>
 
       {result ? (
-        <div className="stack" style={{ marginTop: "1.5rem", maxWidth: 720 }}>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
-            {result.ok ? (
-              <span className="badge badge-success">ok</span>
-            ) : (
-              <span className="badge badge-danger">error</span>
-            )}
-            <span className="badge">{result.latencyMs} ms</span>
+        <section className="page-section">
+          <div className="section-heading-row">
+            <h2>Result</h2>
+            <div className="playground-result-meta">
+              {result.ok ? (
+                <span className="badge badge-success">ok</span>
+              ) : (
+                <span className="badge badge-danger">error</span>
+              )}
+              <span className="badge">{result.latencyMs} ms</span>
+            </div>
           </div>
           {result.error ? (
             <div className="alert alert-error">{result.error}</div>
           ) : null}
-          <div className="result-box">
+          <pre className="result-box">
             {JSON.stringify(result.result ?? result, null, 2)}
-          </div>
-        </div>
+          </pre>
+        </section>
       ) : null}
     </div>
   );
