@@ -1346,7 +1346,6 @@ tbody tr:hover td {
   color: var(--text);
 }
 
-/* page sections — MCPs, Team, Settings */
 .page-section {
   display: flex;
   flex-direction: column;
