@@ -1,9 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { exposedToolName } from "@yusetu/shared";
 import { getDb } from "../db/index.js";
 import { tools, upstreams } from "../db/schema.js";
 import { getLogger } from "../logger.js";
 import { rebuildSnapshotFromDb } from "../mcp/rebuild-snapshot.js";
+import { visibleUpstreamIdsForUser } from "./catalog.js";
 import type { UpstreamPool } from "./pool.js";
 
 export type DiscoverResult = {
@@ -11,6 +12,35 @@ export type DiscoverResult = {
   upserted: number;
   tools: Array<{ originalName: string; exposedName: string }>;
 };
+
+/**
+ * Reject discover when an exposed name would collide with another upstream
+ * already visible to this user (shared catalog or their other personal MCPs).
+ */
+function assertNoExposedCollision(
+  userId: string,
+  upstreamId: string,
+  exposedName: string,
+): void {
+  const db = getDb();
+  const visible = visibleUpstreamIdsForUser(userId);
+  const rows = db
+    .select({
+      exposedName: tools.exposedName,
+      upstreamId: tools.upstreamId,
+    })
+    .from(tools)
+    .where(
+      and(eq(tools.exposedName, exposedName), ne(tools.upstreamId, upstreamId)),
+    )
+    .all();
+  const conflict = rows.find((r) => visible.has(r.upstreamId));
+  if (conflict) {
+    throw new Error(
+      `Exposed tool name "${exposedName}" collides with another MCP in your catalog. Rename the upstream slug or disable the conflicting tool.`,
+    );
+  }
+}
 
 export async function discoverUpstreamTools(
   upstreamId: string,
@@ -38,6 +68,7 @@ export async function discoverUpstreamTools(
 
   for (const tool of listed.tools) {
     const exposed = exposedToolName(upstream.slug, tool.name);
+    assertNoExposedCollision(userId, upstreamId, exposed);
     const existing = db
       .select()
       .from(tools)

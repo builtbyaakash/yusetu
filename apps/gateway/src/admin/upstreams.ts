@@ -13,6 +13,7 @@ import {
   tools,
   upstreamSecrets,
   upstreams,
+  userUpstreamSecrets,
   type Upstream,
 } from "../db/schema.js";
 import { getLogger } from "../logger.js";
@@ -323,6 +324,91 @@ function deleteSecrets(
   return removed;
 }
 
+function storeOverlaySecrets(
+  userId: string,
+  upstreamId: string,
+  secrets: Record<string, string> | undefined,
+  config: GatewayConfig,
+): void {
+  if (!secrets || Object.keys(secrets).length === 0) return;
+  const masterKey = requireMasterKey(config.masterKeyBase64);
+  const db = getDb();
+  for (const [rawKey, rawValue] of Object.entries(secrets)) {
+    const keyName = rawKey.trim();
+    const value = rawValue.trim();
+    if (!keyName || !value) continue;
+    const enc = encryptSecret(value, masterKey);
+    const existing = db
+      .select()
+      .from(userUpstreamSecrets)
+      .where(
+        and(
+          eq(userUpstreamSecrets.userId, userId),
+          eq(userUpstreamSecrets.upstreamId, upstreamId),
+          eq(userUpstreamSecrets.keyName, keyName),
+        ),
+      )
+      .get();
+
+    if (existing) {
+      db.update(userUpstreamSecrets)
+        .set({
+          ciphertext: enc.ciphertext,
+          iv: enc.iv,
+          authTag: enc.authTag,
+        })
+        .where(eq(userUpstreamSecrets.id, existing.id))
+        .run();
+    } else {
+      db.insert(userUpstreamSecrets)
+        .values({
+          id: crypto.randomUUID(),
+          userId,
+          upstreamId,
+          keyName,
+          ciphertext: enc.ciphertext,
+          iv: enc.iv,
+          authTag: enc.authTag,
+        })
+        .run();
+    }
+  }
+}
+
+function deleteOverlaySecrets(
+  userId: string,
+  upstreamId: string,
+  keys: string[] | undefined,
+): number {
+  if (!keys || keys.length === 0) return 0;
+  const db = getDb();
+  let removed = 0;
+  for (const rawKey of keys) {
+    const keyName = rawKey.trim();
+    if (!keyName) continue;
+    const result = db
+      .delete(userUpstreamSecrets)
+      .where(
+        and(
+          eq(userUpstreamSecrets.userId, userId),
+          eq(userUpstreamSecrets.upstreamId, upstreamId),
+          eq(userUpstreamSecrets.keyName, keyName),
+        ),
+      )
+      .run();
+    if (result.changes > 0) removed += 1;
+  }
+  return removed;
+}
+
+/** True when the patch only touches secret overlays (no definition fields). */
+function isSecretsOnlyPatch(data: Record<string, unknown>): boolean {
+  const keys = Object.keys(data).filter(
+    (k) => data[k] !== undefined,
+  );
+  return keys.every((k) => k === "secrets" || k === "removeSecrets");
+}
+
 export function createUpstreamHandlers(
   config: GatewayConfig,
   pool: UpstreamPool,
@@ -624,11 +710,43 @@ export function createUpstreamHandlers(
       const db = getDb();
       const row = db.select().from(upstreams).where(eq(upstreams.id, id)).get();
       if (!row) return c.json({ error: "Not found" }, 404);
+      const user = sessionUser(c);
+      const elevated = isElevatedRole(parseRole(user.role));
+      const data = parsed.data;
+
+      // Members may set credential overlays on shared MCPs without editing the definition.
+      if (
+        row.visibility === "shared" &&
+        !elevated &&
+        canReadUpstream(row, user.id) &&
+        isSecretsOnlyPatch(data as Record<string, unknown>)
+      ) {
+        if (data.removeSecrets?.length) {
+          deleteOverlaySecrets(user.id, id, data.removeSecrets);
+        }
+        if (data.secrets) {
+          storeOverlaySecrets(user.id, id, data.secrets, config);
+        }
+        await pool.invalidate(user.id, id);
+        const toolCount =
+          db
+            .select({ value: count() })
+            .from(tools)
+            .where(eq(tools.upstreamId, id))
+            .get()?.value ?? 0;
+        const status = !row.enabled
+          ? ("disabled" as const)
+          : pool.getStatus(user.id, id).status;
+        log.info(
+          { upstreamId: id, userId: user.id },
+          "upstream secret overlay updated",
+        );
+        return c.json(serializeUpstream(row, { toolCount, status }));
+      }
+
       const blocked = mutateGuard(c, row);
       if (blocked) return blocked;
-      const user = sessionUser(c);
 
-      const data = parsed.data;
       const nextTransport = data.transport ?? row.transport;
       const nextUrl = data.url !== undefined ? data.url : row.url;
       const nextAuthMode = data.authMode ?? row.authMode;
@@ -888,9 +1006,34 @@ export function createUpstreamHandlers(
       const db = getDb();
       const row = db.select().from(upstreams).where(eq(upstreams.id, id)).get();
       if (!row) return c.json({ error: "Not found" }, 404);
+      const user = sessionUser(c);
+      const elevated = isElevatedRole(parseRole(user.role));
+
+      // Members remove their own overlay keys on shared MCPs.
+      if (row.visibility === "shared" && !elevated && canReadUpstream(row, user.id)) {
+        const removed = deleteOverlaySecrets(user.id, id, [keyName]);
+        if (removed === 0) {
+          return c.json({ error: "Secret key not found" }, 404);
+        }
+        await pool.invalidate(user.id, id);
+        const toolCount =
+          db
+            .select({ value: count() })
+            .from(tools)
+            .where(eq(tools.upstreamId, id))
+            .get()?.value ?? 0;
+        const status = !row.enabled
+          ? ("disabled" as const)
+          : pool.getStatus(user.id, id).status;
+        log.info(
+          { upstreamId: id, keyName, userId: user.id },
+          "upstream overlay secret deleted",
+        );
+        return c.json(serializeUpstream(row, { toolCount, status }));
+      }
+
       const blocked = mutateGuard(c, row);
       if (blocked) return blocked;
-      const user = sessionUser(c);
 
       const removed = deleteSecrets(id, [keyName]);
       if (removed === 0) {
