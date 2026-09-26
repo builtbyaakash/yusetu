@@ -311,17 +311,12 @@ export function UpstreamsPage() {
         <span className="filter-bar-label" id="mcp-visibility-filter-label">
           Show
         </span>
-        <div
-          className="segmented"
-          role="radiogroup"
-          aria-labelledby="mcp-visibility-filter-label"
-        >
+        <div className="segmented" aria-labelledby="mcp-visibility-filter-label">
           {filterOptions.map((opt) => (
             <button
               key={opt.value}
               type="button"
-              role="radio"
-              aria-checked={visibilityFilter === opt.value}
+              aria-pressed={visibilityFilter === opt.value}
               className={`segmented-btn${
                 visibilityFilter === opt.value ? " is-active" : ""
               }`}

@@ -778,10 +778,6 @@ tbody tr:hover td {
   box-shadow: var(--shadow);
 }
 
-.modal-wide {
-  width: min(640px, 100%);
-}
-
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -1181,6 +1177,7 @@ tbody tr:hover td {
 }
 
 .result-box {
+  margin: 0;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
