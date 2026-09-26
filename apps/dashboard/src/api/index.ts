@@ -7,6 +7,7 @@ import type {
   CreateInvite,
   CreateInviteResponse,
   CreateUpstream,
+  CreateUpstreamGrant,
   HealthResponse,
   JoinBody,
   JoinResponse,
@@ -19,6 +20,7 @@ import type {
   UpdateTool,
   UpdateUpstream,
   Upstream,
+  UpstreamGrant,
   UpstreamOauthStartResponse,
   UpstreamOauthStatusResponse,
   UsageAnalytics,
@@ -111,6 +113,17 @@ export const upstreamsApi = {
   disconnectOauth: (id: string) =>
     apiFetch<void>(`/api/upstreams/${id}/oauth/disconnect`, {
       method: "POST",
+    }),
+  listGrants: (id: string) =>
+    apiFetch<UpstreamGrant[]>(`/api/upstreams/${id}/grants`),
+  createGrant: (id: string, body: CreateUpstreamGrant) =>
+    apiFetch<UpstreamGrant>(`/api/upstreams/${id}/grants`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  revokeGrant: (id: string, userId: string) =>
+    apiFetch<void>(`/api/upstreams/${id}/grants/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
     }),
 };
 
