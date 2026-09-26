@@ -6,7 +6,7 @@ import {
   JoinBodySchema,
   PatchMemberRoleSchema,
 } from "@yusetu/shared";
-import { parseRole } from "../auth/context.js";
+import { capabilitiesForRole, parseRole } from "../auth/context.js";
 import {
   hashPassword,
   hashToken,
@@ -237,11 +237,13 @@ export async function handleJoin(c: Context) {
   log.info({ userId, username: body.data.username, role: invite.role }, "invite join");
 
   const user = db.select().from(users).where(eq(users.id, userId)).get()!;
+  const role = parseRole(user.role);
   return c.json(
     {
       id: user.id,
       username: user.username,
-      role: parseRole(user.role),
+      role,
+      capabilities: capabilitiesForRole(role),
     },
     201,
   );
