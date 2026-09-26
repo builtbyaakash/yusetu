@@ -4,6 +4,9 @@ export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   username: text("username").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  role: text("role", { enum: ["owner", "admin", "member"] })
+    .notNull()
+    .default("member"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   lastLoginAt: integer("last_login_at", { mode: "timestamp_ms" }),
 });
@@ -18,9 +21,24 @@ export const sessions = sqliteTable("sessions", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+export const invites = sqliteTable("invites", {
+  id: text("id").primaryKey(),
+  tokenHash: text("token_hash").notNull().unique(),
+  role: text("role", { enum: ["admin", "member"] }).notNull(),
+  createdByUserId: text("created_by_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  usedAt: integer("used_at", { mode: "timestamp_ms" }),
+  usedByUserId: text("used_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const upstreams = sqliteTable("upstreams", {
   id: text("id").primaryKey(),
-  slug: text("slug").notNull().unique(),
+  slug: text("slug").notNull(),
   name: text("name").notNull(),
   transport: text("transport", {
     enum: ["stdio", "sse", "streamable-http"],
@@ -50,12 +68,34 @@ export const upstreams = sqliteTable("upstreams", {
     .default("none"),
   /** Optional Docker image override. */
   isolationImage: text("isolation_image"),
+  visibility: text("visibility", { enum: ["shared", "personal"] })
+    .notNull()
+    .default("shared"),
+  /** Required for personal upstreams. Null for shared. */
+  ownerUserId: text("owner_user_id").references(() => users.id, {
+    onDelete: "cascade",
+  }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   createdByUserId: text("created_by_user_id").references(() => users.id),
 });
 
 export const upstreamSecrets = sqliteTable("upstream_secrets", {
   id: text("id").primaryKey(),
+  upstreamId: text("upstream_id")
+    .notNull()
+    .references(() => upstreams.id, { onDelete: "cascade" }),
+  keyName: text("key_name").notNull(),
+  ciphertext: text("ciphertext").notNull(),
+  iv: text("iv").notNull(),
+  authTag: text("auth_tag").notNull(),
+});
+
+/** Per-user secret overlay on a shared or personal upstream. */
+export const userUpstreamSecrets = sqliteTable("user_upstream_secrets", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   upstreamId: text("upstream_id")
     .notNull()
     .references(() => upstreams.id, { onDelete: "cascade" }),
@@ -89,13 +129,36 @@ export const upstreamOauth = sqliteTable("upstream_oauth", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/** Per-user OAuth tokens for shared upstreams. */
+export const userUpstreamOauth = sqliteTable("user_upstream_oauth", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  upstreamId: text("upstream_id")
+    .notNull()
+    .references(() => upstreams.id, { onDelete: "cascade" }),
+  clientInformationJson: text("client_information_json"),
+  tokensJson: text("tokens_json"),
+  codeVerifier: text("code_verifier"),
+  pendingState: text("pending_state"),
+  discoveryJson: text("discovery_json"),
+  status: text("status", {
+    enum: ["disconnected", "pending", "connected", "error"],
+  })
+    .notNull()
+    .default("disconnected"),
+  errorMessage: text("error_message"),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const tools = sqliteTable("tools", {
   id: text("id").primaryKey(),
   upstreamId: text("upstream_id")
     .notNull()
     .references(() => upstreams.id, { onDelete: "cascade" }),
   originalName: text("original_name").notNull(),
-  exposedName: text("exposed_name").notNull().unique(),
+  exposedName: text("exposed_name").notNull(),
   description: text("description"),
   inputSchemaJson: text("input_schema_json"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
@@ -107,6 +170,7 @@ export const apiKeys = sqliteTable("api_keys", {
   name: text("name").notNull(),
   keyHash: text("key_hash").notNull(),
   prefix: text("prefix").notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
@@ -141,6 +205,7 @@ export const usageEvents = sqliteTable("usage_events", {
   /** Counterfactual tokens if those MCP(s) were connected directly. */
   tokensIfDirect: integer("tokens_if_direct").notNull(),
   callCount: integer("call_count").notNull().default(1),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
 });
 
 export const oauthClients = sqliteTable("oauth_clients", {
@@ -188,9 +253,12 @@ export const oauthTokens = sqliteTable("oauth_tokens", {
 
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
+export type Invite = typeof invites.$inferSelect;
 export type Upstream = typeof upstreams.$inferSelect;
 export type UpstreamSecret = typeof upstreamSecrets.$inferSelect;
+export type UserUpstreamSecret = typeof userUpstreamSecrets.$inferSelect;
 export type UpstreamOauth = typeof upstreamOauth.$inferSelect;
+export type UserUpstreamOauth = typeof userUpstreamOauth.$inferSelect;
 export type Tool = typeof tools.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type Setting = typeof settings.$inferSelect;

@@ -165,7 +165,17 @@ export type HealthResponse = {
   }>;
 };
 
+export type Role = "owner" | "admin" | "member";
+
+export type AuthCapabilities = {
+  canManageUsers: boolean;
+  canManageSharedMcps: boolean;
+  canInvite: boolean;
+};
+
 export type AuthMeResponse = {
   id: string;
   username: string;
+  role: Role;
+  capabilities: AuthCapabilities;
 };

@@ -1,6 +1,8 @@
 import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import path from "node:path";
 import * as schema from "./schema.js";
+import { migrateTeamsV1 } from "./migrate-teams.js";
 
 export type Db = BetterSQLite3Database<typeof schema>;
 
@@ -15,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY NOT NULL,
   username TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member',
   created_at INTEGER NOT NULL,
   last_login_at INTEGER
 );
@@ -27,9 +30,20 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS invites (
+  id TEXT PRIMARY KEY NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  role TEXT NOT NULL,
+  created_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER,
+  used_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS upstreams (
   id TEXT PRIMARY KEY NOT NULL,
-  slug TEXT NOT NULL UNIQUE,
+  slug TEXT NOT NULL,
   name TEXT NOT NULL,
   transport TEXT NOT NULL,
   command TEXT,
@@ -42,12 +56,27 @@ CREATE TABLE IF NOT EXISTS upstreams (
   git_url TEXT,
   git_ref TEXT,
   install_command TEXT,
+  isolation TEXT NOT NULL DEFAULT 'host',
+  isolation_network TEXT NOT NULL DEFAULT 'none',
+  isolation_image TEXT,
+  visibility TEXT NOT NULL DEFAULT 'shared',
+  owner_user_id TEXT,
   created_at INTEGER NOT NULL,
   created_by_user_id TEXT REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS upstream_secrets (
   id TEXT PRIMARY KEY NOT NULL,
+  upstream_id TEXT NOT NULL REFERENCES upstreams(id) ON DELETE CASCADE,
+  key_name TEXT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  iv TEXT NOT NULL,
+  auth_tag TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_upstream_secrets (
+  id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   upstream_id TEXT NOT NULL REFERENCES upstreams(id) ON DELETE CASCADE,
   key_name TEXT NOT NULL,
   ciphertext TEXT NOT NULL,
@@ -67,11 +96,25 @@ CREATE TABLE IF NOT EXISTS upstream_oauth (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_upstream_oauth (
+  id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  upstream_id TEXT NOT NULL REFERENCES upstreams(id) ON DELETE CASCADE,
+  client_information_json TEXT,
+  tokens_json TEXT,
+  code_verifier TEXT,
+  pending_state TEXT,
+  discovery_json TEXT,
+  status TEXT NOT NULL DEFAULT 'disconnected',
+  error_message TEXT,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS tools (
   id TEXT PRIMARY KEY NOT NULL,
   upstream_id TEXT NOT NULL REFERENCES upstreams(id) ON DELETE CASCADE,
   original_name TEXT NOT NULL,
-  exposed_name TEXT NOT NULL UNIQUE,
+  exposed_name TEXT NOT NULL,
   description TEXT,
   input_schema_json TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
@@ -83,6 +126,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
   name TEXT NOT NULL,
   key_hash TEXT NOT NULL,
   prefix TEXT NOT NULL,
+  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
   created_at INTEGER NOT NULL,
   last_used_at INTEGER,
   enabled INTEGER NOT NULL DEFAULT 1
@@ -101,7 +145,8 @@ CREATE TABLE IF NOT EXISTS usage_events (
   tool_name TEXT,
   tokens_via_gateway INTEGER NOT NULL,
   tokens_if_direct INTEGER NOT NULL,
-  call_count INTEGER NOT NULL DEFAULT 1
+  call_count INTEGER NOT NULL DEFAULT 1,
+  user_id TEXT REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS oauth_clients (
@@ -146,6 +191,7 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_tools_upstream_id ON tools(upstream_id);
+CREATE INDEX IF NOT EXISTS idx_tools_exposed_name ON tools(exposed_name);
 CREATE INDEX IF NOT EXISTS idx_upstream_secrets_upstream_id ON upstream_secrets(upstream_id);
 CREATE INDEX IF NOT EXISTS idx_upstream_oauth_pending_state ON upstream_oauth(pending_state);
 CREATE INDEX IF NOT EXISTS idx_oauth_clients_client_id ON oauth_clients(client_id);
@@ -154,10 +200,15 @@ CREATE INDEX IF NOT EXISTS idx_oauth_tokens_token_hash ON oauth_tokens(token_has
 CREATE INDEX IF NOT EXISTS idx_usage_events_created_at ON usage_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_usage_events_kind ON usage_events(kind);
 CREATE INDEX IF NOT EXISTS idx_usage_events_mcp_slug ON usage_events(mcp_slug);
+CREATE INDEX IF NOT EXISTS idx_invites_token_hash ON invites(token_hash);
+CREATE INDEX IF NOT EXISTS idx_user_upstream_secrets_user_upstream
+  ON user_upstream_secrets(user_id, upstream_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_upstream_oauth_user_upstream
+  ON user_upstream_oauth(user_id, upstream_id);
 `;
 
 /** Light migrations for existing DBs created before schema additions. */
-function migrateSchema(sqlite: Database.Database): void {
+function migrateSchema(sqlite: Database.Database, dataDir: string): void {
   const upstreamCols = sqlite
     .prepare("PRAGMA table_info(upstreams)")
     .all() as Array<{ name: string }>;
@@ -204,7 +255,6 @@ CREATE TABLE IF NOT EXISTS upstream_oauth (
 CREATE INDEX IF NOT EXISTS idx_upstream_oauth_pending_state ON upstream_oauth(pending_state);
 `);
 
-  // Additive: usage analytics (safe on existing gateway.db)
   sqlite.exec(`
 CREATE TABLE IF NOT EXISTS usage_events (
   id TEXT PRIMARY KEY NOT NULL,
@@ -220,12 +270,15 @@ CREATE INDEX IF NOT EXISTS idx_usage_events_created_at ON usage_events(created_a
 CREATE INDEX IF NOT EXISTS idx_usage_events_kind ON usage_events(kind);
 CREATE INDEX IF NOT EXISTS idx_usage_events_mcp_slug ON usage_events(mcp_slug);
 `);
+
+  migrateTeamsV1(sqlite, dataDir);
 }
 
 export function openDb(dbPath: string): Db {
   const sqlite = new Database(dbPath);
+  const dataDir = path.dirname(path.resolve(dbPath));
   sqlite.exec(BOOT_SQL);
-  migrateSchema(sqlite);
+  migrateSchema(sqlite, dataDir);
   const db = drizzle(sqlite, { schema });
   sqliteInstance = sqlite;
   dbInstance = db;

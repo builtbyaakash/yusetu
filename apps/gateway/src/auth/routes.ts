@@ -10,6 +10,10 @@ import { getDb } from "../db/index.js";
 import { users } from "../db/schema.js";
 import { getLogger } from "../logger.js";
 import {
+  capabilitiesForRole,
+  parseRole,
+} from "./context.js";
+import {
   hashPassword,
   SESSION_COOKIE,
   SESSION_TTL_MS,
@@ -34,6 +38,20 @@ function setSessionCookie(c: Context, token: string): void {
 
 function clearSessionCookie(c: Context): void {
   deleteCookie(c, SESSION_COOKIE, { path: "/" });
+}
+
+function toMe(user: {
+  id: string;
+  username: string;
+  role: string;
+}): AuthMeResponse {
+  const role = parseRole(user.role);
+  return {
+    id: user.id,
+    username: user.username,
+    role,
+    capabilities: capabilitiesForRole(role),
+  };
 }
 
 export function userCount(): number {
@@ -63,6 +81,7 @@ export async function handleSetup(c: Context) {
       id,
       username: body.data.username,
       passwordHash,
+      role: "owner",
       createdAt: now,
       lastLoginAt: now,
     })
@@ -72,8 +91,10 @@ export async function handleSetup(c: Context) {
   setSessionCookie(c, token);
   log.info({ userId: id, username: body.data.username }, "admin setup complete");
 
-  const me: AuthMeResponse = { id, username: body.data.username };
-  return c.json(me, 201);
+  return c.json(
+    toMe({ id, username: body.data.username, role: "owner" }),
+    201,
+  );
 }
 
 export async function handleLogin(c: Context) {
@@ -107,8 +128,7 @@ export async function handleLogin(c: Context) {
   const token = await createSession(user.id);
   setSessionCookie(c, token);
 
-  const me: AuthMeResponse = { id: user.id, username: user.username };
-  return c.json(me);
+  return c.json(toMe(user));
 }
 
 export async function handleLogout(c: Context) {
@@ -140,8 +160,7 @@ export async function handleMe(c: Context) {
     clearSessionCookie(c);
     return c.json({ error: "Unauthorized" }, 401);
   }
-  const me: AuthMeResponse = { id: user.id, username: user.username };
-  return c.json(me);
+  return c.json(toMe(user));
 }
 
 export function getSessionUser(c: Context) {
