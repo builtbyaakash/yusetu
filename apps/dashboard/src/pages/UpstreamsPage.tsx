@@ -14,6 +14,7 @@ import type {
 import { Modal } from "../components/Modal";
 import { Toggle } from "../components/Toggle";
 import { UpstreamForm } from "../components/UpstreamForm";
+import { UpstreamGrantsPanel } from "../components/UpstreamGrantsPanel";
 
 function statusBadge(status?: string) {
   switch (status) {
@@ -69,6 +70,7 @@ export function UpstreamsPage() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [modal, setModal] = useState<"create" | Upstream | null>(null);
+  const [grantsFor, setGrantsFor] = useState<Upstream | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [oauthAlert, setOauthAlert] = useState<{
     type: "success" | "error";
@@ -434,6 +436,16 @@ export function UpstreamsPage() {
                       </button>
                       {manageable ? (
                         <>
+                          {(u.visibility ?? "personal") === "shared" &&
+                          me?.capabilities.canManageSharedMcps ? (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => setGrantsFor(u)}
+                            >
+                              Share
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             className="btn btn-ghost btn-sm"
@@ -500,6 +512,18 @@ export function UpstreamsPage() {
             onSubmit={(body) =>
               updateMutation.mutate({ id: modal.id, body })
             }
+          />
+        </Modal>
+      ) : null}
+
+      {grantsFor ? (
+        <Modal
+          title={`Share ${grantsFor.name}`}
+          onClose={() => setGrantsFor(null)}
+        >
+          <UpstreamGrantsPanel
+            upstream={grantsFor}
+            onClose={() => setGrantsFor(null)}
           />
         </Modal>
       ) : null}

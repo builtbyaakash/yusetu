@@ -200,7 +200,7 @@ export function UpstreamForm({
             }
           >
             <option value="personal">Personal — only you</option>
-            <option value="shared">Shared — whole team</option>
+            <option value="shared">Shared — grant access per member</option>
           </select>
         </div>
       ) : null}
