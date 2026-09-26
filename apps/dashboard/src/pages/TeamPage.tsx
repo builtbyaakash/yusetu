@@ -102,10 +102,10 @@ export function TeamPage() {
       </div>
 
       {me?.capabilities.canInvite ? (
-        <section className="stack" style={{ maxWidth: 720, marginBottom: "2rem" }}>
+        <section className="page-section">
           <h2>Create invite</h2>
-          <p className="hint" style={{ marginTop: 0 }}>
-            Share the link once — each invite is single-use and expires in seven
+          <p className="hint">
+            Share the link once. Each invite is single-use and expires in seven
             days.
           </p>
           <form
@@ -147,28 +147,27 @@ export function TeamPage() {
 
           {createdInvite ? (
             <div className="alert alert-success">
-              <p style={{ marginBottom: "0.5rem", color: "inherit" }}>
-                Copy this join URL and send it to your teammate.
-              </p>
-              <code className="key-reveal">
-                {window.location.origin}
-                {createdInvite.joinPath}
-              </code>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ marginTop: "0.75rem" }}
-                onClick={() => void copyJoinLink()}
-              >
-                {copied ? "Copied" : "Copy link"}
-              </button>
+              <p>Copy this join URL and send it to your teammate.</p>
+              <div className="copy-row">
+                <code className="key-reveal">
+                  {window.location.origin}
+                  {createdInvite.joinPath}
+                </code>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => void copyJoinLink()}
+                >
+                  {copied ? "Copied" : "Copy link"}
+                </button>
+              </div>
             </div>
           ) : null}
         </section>
       ) : null}
 
       {me?.capabilities.canInvite ? (
-        <section style={{ marginBottom: "2rem" }}>
+        <section className="page-section page-section--wide">
           <h2>Invites</h2>
           {invitesQuery.isLoading ? (
             <div className="empty">Loading invites…</div>
@@ -184,7 +183,7 @@ export function TeamPage() {
             <div className="empty">No invites yet.</div>
           ) : null}
           {invitesQuery.data && invitesQuery.data.length > 0 ? (
-            <div className="table-wrap" style={{ marginTop: "0.75rem" }}>
+            <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -246,7 +245,7 @@ export function TeamPage() {
       ) : null}
 
       {me?.capabilities.canManageUsers ? (
-        <section>
+        <section className="page-section page-section--wide">
           <h2>Members</h2>
           {membersQuery.isLoading ? (
             <div className="empty">Loading members…</div>
@@ -259,7 +258,7 @@ export function TeamPage() {
             </div>
           ) : null}
           {membersQuery.data && membersQuery.data.length > 0 ? (
-            <div className="table-wrap" style={{ marginTop: "0.75rem" }}>
+            <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -300,7 +299,7 @@ export function TeamPage() {
                           </select>
                           {roleMutation.error &&
                           roleMutation.variables?.userId === member.id ? (
-                            <div className="hint" style={{ color: "var(--danger)" }}>
+                            <div className="hint hint-danger">
                               {roleMutation.error instanceof ApiError
                                 ? roleMutation.error.message
                                 : "Update failed."}

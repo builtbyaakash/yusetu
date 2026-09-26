@@ -75,18 +75,14 @@ export function SettingsPage() {
         </div>
       </div>
 
-      <section className="stack" style={{ maxWidth: 720 }}>
+      <section className="page-section">
         <h2>Connection</h2>
-        <p className="hint" style={{ marginTop: 0 }}>
-          Point MCP clients at these gateway URLs.
-        </p>
+        <p className="hint">Point MCP clients at these gateway URLs.</p>
 
         <div className="field">
           <label>Streamable HTTP</label>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
-            <code className="key-reveal" style={{ flex: 1, margin: 0 }}>
-              {endpoints.streamableHttp}
-            </code>
+          <div className="copy-row">
+            <code className="key-reveal">{endpoints.streamableHttp}</code>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -101,10 +97,8 @@ export function SettingsPage() {
 
         <div className="field">
           <label>Health</label>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
-            <code className="key-reveal" style={{ flex: 1, margin: 0 }}>
-              {endpoints.health}
-            </code>
+          <div className="copy-row">
+            <code className="key-reveal">{endpoints.health}</code>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -114,15 +108,15 @@ export function SettingsPage() {
             </button>
           </div>
         </div>
+      </section>
 
-        <h3 style={{ marginTop: "0.5rem", marginBottom: 0 }}>OAuth discovery</h3>
+      <section className="page-section">
+        <h2>OAuth discovery</h2>
 
         <div className="field">
           <label>Protected resource metadata (PRM)</label>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
-            <code className="key-reveal" style={{ flex: 1, margin: 0 }}>
-              {endpoints.oauthProtectedResource}
-            </code>
+          <div className="copy-row">
+            <code className="key-reveal">{endpoints.oauthProtectedResource}</code>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -140,8 +134,8 @@ export function SettingsPage() {
 
         <div className="field">
           <label>Authorization server metadata</label>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
-            <code className="key-reveal" style={{ flex: 1, margin: 0 }}>
+          <div className="copy-row">
+            <code className="key-reveal">
               {endpoints.oauthAuthorizationServer}
             </code>
             <button
@@ -160,8 +154,8 @@ export function SettingsPage() {
         </div>
 
         <div className="field">
-          <div className="toolbar" style={{ marginBottom: 0 }}>
-            <label style={{ margin: 0 }}>Client config example</label>
+          <div className="section-heading-row">
+            <label>Client config example</label>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -170,13 +164,11 @@ export function SettingsPage() {
               {copied === "snippet" ? "Copied" : "Copy"}
             </button>
           </div>
-          <pre className="result-box" style={{ margin: 0 }}>
-            {configSnippet}
-          </pre>
+          <pre className="result-box">{configSnippet}</pre>
         </div>
       </section>
 
-      <section className="stack" style={{ maxWidth: 720, marginTop: "1.5rem" }}>
+      <section className="page-section">
         <h2>Create API key</h2>
         <form className="form" onSubmit={handleCreate}>
           {createMutation.error ? (
@@ -208,23 +200,22 @@ export function SettingsPage() {
 
         {created ? (
           <div className="alert alert-success">
-            <p style={{ marginBottom: "0.5rem", color: "inherit" }}>
-              Copy this key now — it will not be shown again.
-            </p>
-            <div className="key-reveal">{created.key}</div>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ marginTop: "0.75rem" }}
-              onClick={() => void navigator.clipboard.writeText(created.key)}
-            >
-              Copy to clipboard
-            </button>
+            <p>Copy this key now. It will not be shown again.</p>
+            <div className="copy-row">
+              <div className="key-reveal">{created.key}</div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => void navigator.clipboard.writeText(created.key)}
+              >
+                Copy to clipboard
+              </button>
+            </div>
           </div>
         ) : null}
       </section>
 
-      <section style={{ marginTop: "2rem" }}>
+      <section className="page-section page-section--wide">
         <h2>API keys</h2>
         {keysQuery.isLoading ? <div className="empty">Loading keys…</div> : null}
         {keysQuery.error ? (
@@ -238,29 +229,29 @@ export function SettingsPage() {
           <div className="empty">No API keys yet.</div>
         ) : null}
         {keysQuery.data && keysQuery.data.length > 0 ? (
-          <div className="table-wrap" style={{ marginTop: "0.75rem" }}>
-            <table>
+          <div className="table-wrap">
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Name</th>
                   <th>Prefix</th>
                   <th>Created</th>
                   <th>Last used</th>
-                  <th />
+                  <th className="col-actions" />
                 </tr>
               </thead>
               <tbody>
                 {keysQuery.data.map((key) => (
                   <tr key={key.id}>
-                    <td>{key.name}</td>
+                    <td className="cell-name">{key.name}</td>
                     <td>
-                      <code>{key.keyPrefix}…</code>
+                      <code className="cell-slug">{key.keyPrefix}…</code>
                     </td>
                     <td>{formatDate(key.createdAt)}</td>
                     <td>
                       {key.lastUsedAt ? formatDate(key.lastUsedAt) : "—"}
                     </td>
-                    <td>
+                    <td className="col-actions">
                       <button
                         type="button"
                         className="btn btn-danger btn-sm"
