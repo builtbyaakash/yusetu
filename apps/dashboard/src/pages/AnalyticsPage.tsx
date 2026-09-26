@@ -123,7 +123,7 @@ export function AnalyticsPage() {
       : null;
 
   return (
-    <div>
+    <div className="analytics">
       <div className="page-header">
         <div>
           <h1>Analytics</h1>
@@ -143,96 +143,105 @@ export function AnalyticsPage() {
       ) : null}
 
       {data && !hasUsage ? (
-        <div className="empty analytics-empty">
-          <p>
-            No usage recorded yet. After agents connect to the gateway and list
-            or call tools, token savings and per-MCP usage will show up here.
-          </p>
-          {data.mcpCount > 0 ? (
-            <p className="hint" style={{ marginBottom: 0 }}>
-              {data.mcpCount} enabled MCP{data.mcpCount === 1 ? "" : "s"} ·{" "}
-              {data.catalogToolCount} tools available
-              {catalogExposureHint ? (
-                <>
-                  <br />
-                  {catalogExposureHint}
-                </>
-              ) : null}
+        <section className="page-section">
+          <div className="empty analytics-empty">
+            <p>
+              No usage recorded yet. After agents connect to the gateway and list
+              or call tools, token savings and per-MCP usage will show up here.
             </p>
-          ) : (
-            <p className="hint" style={{ marginBottom: 0 }}>
-              Add and enable MCPs, then point an agent at this gateway.
-            </p>
-          )}
-        </div>
+            {data.mcpCount > 0 ? (
+              <p className="hint">
+                {data.mcpCount} enabled MCP{data.mcpCount === 1 ? "" : "s"} ·{" "}
+                {data.catalogToolCount} tools available
+                {catalogExposureHint ? (
+                  <>
+                    <br />
+                    {catalogExposureHint}
+                  </>
+                ) : null}
+              </p>
+            ) : (
+              <p className="hint">
+                Add and enable MCPs, then point an agent at this gateway.
+              </p>
+            )}
+          </div>
+        </section>
       ) : null}
 
       {data && hasUsage ? (
-        <div className="stack" style={{ maxWidth: 860 }}>
+        <>
           {catalogExposureHint ? (
-            <p className="hint" style={{ margin: 0 }}>
-              {catalogExposureHint}
-            </p>
+            <p className="hint analytics-exposure-hint">{catalogExposureHint}</p>
           ) : null}
-          <section className="analytics-hero analytics-hero--savings">
-            <div className="analytics-hero-top">
-              <p className="analytics-hero-label">Tool-definition tokens saved</p>
-              {(data.catalogSavingsPercent ?? data.savingsPercent) != null ? (
-                <span className="analytics-savings-badge">
-                  −{data.catalogSavingsPercent ?? data.savingsPercent}%
-                </span>
-              ) : null}
+
+          <section className="page-section page-section--wide">
+            <div className="analytics-hero analytics-hero--savings">
+              <div className="analytics-hero-top">
+                <p className="analytics-hero-label">
+                  Tool-definition tokens saved
+                </p>
+                {(data.catalogSavingsPercent ?? data.savingsPercent) != null ? (
+                  <span className="analytics-savings-badge">
+                    −{data.catalogSavingsPercent ?? data.savingsPercent}%
+                  </span>
+                ) : null}
+              </div>
+              <p className="analytics-hero-value">
+                {formatTokens(data.catalogTokensSaved ?? data.tokensSaved)}
+              </p>
+              <p className="analytics-hero-sub">
+                vs exposing the full catalog on tools/list (invoke payloads are
+                unchanged)
+              </p>
             </div>
-            <p className="analytics-hero-value">
-              {formatTokens(data.catalogTokensSaved ?? data.tokensSaved)}
-            </p>
-            <p className="analytics-hero-sub">
-              vs exposing the full catalog on tools/list (invoke payloads are
-              unchanged)
-            </p>
+
+            <div className="analytics-compare">
+              <div className="analytics-compare-item analytics-compare-item--savings">
+                <span className="analytics-compare-label">Catalog saved</span>
+                <span className="analytics-compare-stat analytics-compare-stat--lg analytics-compare-stat--saved">
+                  −{formatTokens(data.catalogTokensSaved ?? data.tokensSaved)}
+                </span>
+                {(data.catalogSavingsPercent ?? data.savingsPercent) != null ? (
+                  <span className="analytics-compare-hint">
+                    {data.catalogSavingsPercent ?? data.savingsPercent}% fewer
+                    definition tokens
+                  </span>
+                ) : null}
+              </div>
+              <div className="analytics-compare-item">
+                <span className="analytics-compare-label">
+                  Calls through Yūsetu
+                </span>
+                <span className="analytics-compare-stat analytics-compare-stat--lg">
+                  {formatTokens(data.totalCalls)}
+                </span>
+              </div>
+              <div className="analytics-compare-item">
+                <span className="analytics-compare-label">
+                  All tokens via Yūsetu
+                </span>
+                <span className="analytics-compare-stat analytics-compare-stat--lg">
+                  {formatTokens(data.tokensViaYusetu)}
+                </span>
+              </div>
+              <div className="analytics-compare-item">
+                <span className="analytics-compare-label">
+                  All tokens if direct
+                </span>
+                <span className="analytics-compare-stat analytics-compare-stat--lg">
+                  {formatTokens(data.tokensIfDirect)}
+                </span>
+                {data.savingsPercent != null ? (
+                  <span className="analytics-compare-hint">
+                    {data.savingsPercent}% overall (includes invokes)
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </section>
 
-          <div className="analytics-compare">
-            <div className="analytics-compare-item analytics-compare-item--savings">
-              <span className="analytics-compare-label">Catalog saved</span>
-              <span className="analytics-compare-stat analytics-compare-stat--lg analytics-compare-stat--saved">
-                −{formatTokens(data.catalogTokensSaved ?? data.tokensSaved)}
-              </span>
-              {(data.catalogSavingsPercent ?? data.savingsPercent) != null ? (
-                <span className="analytics-compare-hint">
-                  {data.catalogSavingsPercent ?? data.savingsPercent}% fewer
-                  definition tokens
-                </span>
-              ) : null}
-            </div>
-            <div className="analytics-compare-item">
-              <span className="analytics-compare-label">
-                Calls through Yūsetu
-              </span>
-              <span className="analytics-compare-stat analytics-compare-stat--lg">
-                {formatTokens(data.totalCalls)}
-              </span>
-            </div>
-            <div className="analytics-compare-item">
-              <span className="analytics-compare-label">All tokens via Yūsetu</span>
-              <span className="analytics-compare-stat analytics-compare-stat--lg">
-                {formatTokens(data.tokensViaYusetu)}
-              </span>
-            </div>
-            <div className="analytics-compare-item">
-              <span className="analytics-compare-label">All tokens if direct</span>
-              <span className="analytics-compare-stat analytics-compare-stat--lg">
-                {formatTokens(data.tokensIfDirect)}
-              </span>
-              {data.savingsPercent != null ? (
-                <span className="analytics-compare-hint">
-                  {data.savingsPercent}% overall (includes invokes)
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          <section className="analytics-chart-section">
+          <section className="page-section page-section--wide analytics-chart-section">
             <h2>Usage by MCP</h2>
             <McpUsageChart rows={data.byMcp} />
           </section>
@@ -240,17 +249,17 @@ export function AnalyticsPage() {
           {data.byMcp.some(
             (r) => r.calls > 0 || r.tokensViaYusetu > 0 || r.tokensIfDirect > 0,
           ) ? (
-            <div>
-              <h2 style={{ marginBottom: "0.75rem" }}>Per MCP</h2>
+            <section className="page-section page-section--wide">
+              <h2>Per MCP</h2>
               <div className="table-wrap">
-                <table>
+                <table className="data-table">
                   <thead>
                     <tr>
                       <th>MCP</th>
-                      <th>Calls</th>
-                      <th>Via Yūsetu</th>
-                      <th>If direct</th>
-                      <th>Saved</th>
+                      <th className="col-num">Calls</th>
+                      <th className="col-num">Via Yūsetu</th>
+                      <th className="col-num">If direct</th>
+                      <th className="col-num">Saved</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -266,14 +275,18 @@ export function AnalyticsPage() {
                         const pct = savingsPct(row);
                         return (
                           <tr key={row.slug}>
-                            <td>
+                            <td className="cell-name">
                               {row.name}{" "}
-                              <code className="hint">{row.slug}</code>
+                              <code className="cell-slug">{row.slug}</code>
                             </td>
-                            <td>{formatTokens(row.calls)}</td>
-                            <td>{formatTokens(row.tokensViaYusetu)}</td>
-                            <td>{formatTokens(row.tokensIfDirect)}</td>
-                            <td>
+                            <td className="col-num">{formatTokens(row.calls)}</td>
+                            <td className="col-num">
+                              {formatTokens(row.tokensViaYusetu)}
+                            </td>
+                            <td className="col-num">
+                              {formatTokens(row.tokensIfDirect)}
+                            </td>
+                            <td className="col-num">
                               <span className="analytics-saved-cell">
                                 −{formatTokens(saved)}
                                 {pct != null ? (
@@ -289,9 +302,9 @@ export function AnalyticsPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </section>
           ) : null}
-        </div>
+        </>
       ) : null}
     </div>
   );

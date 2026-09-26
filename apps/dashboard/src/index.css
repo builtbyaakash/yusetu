@@ -867,26 +867,15 @@ tbody tr:hover td {
 }
 
 .analytics-hero {
-  padding: 1.5rem 1.75rem;
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--accent) 8%, var(--bg-elevated)) 0%,
-    var(--bg-elevated) 55%,
-    color-mix(in srgb, #0b1f3a 4%, var(--bg-elevated)) 100%
-  );
+  padding: 1.25rem 1.35rem;
+  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius);
 }
 
 .analytics-hero--savings {
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--success) 14%, var(--bg-elevated)) 0%,
-    var(--bg-elevated) 50%,
-    color-mix(in srgb, var(--accent) 6%, var(--bg-elevated)) 100%
-  );
-  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  background: color-mix(in srgb, var(--success) 8%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--success) 28%, var(--border));
 }
 
 .analytics-hero-top {
@@ -906,21 +895,22 @@ tbody tr:hover td {
 .analytics-savings-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.55rem;
-  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
   font-size: 0.8rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--success);
   background: var(--success-bg);
-  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 28%, transparent);
 }
 
 .analytics-hero-value {
-  margin: 0 0 0.5rem;
-  font-size: clamp(2.25rem, 4vw, 3rem);
+  margin: 0 0 0.4rem;
+  font-size: clamp(1.85rem, 3.5vw, 2.4rem);
   font-weight: 700;
   line-height: 1.1;
+  letter-spacing: -0.03em;
   color: var(--success);
   font-variant-numeric: tabular-nums;
 }
@@ -940,16 +930,16 @@ tbody tr:hover td {
 .analytics-compare-item {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 1rem 1.1rem;
-  background: var(--bg-elevated);
+  gap: 0.3rem;
+  padding: 0.85rem 0.95rem;
+  background: color-mix(in srgb, var(--bg-muted) 40%, var(--bg-elevated));
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
 }
 
 .analytics-compare-item--savings {
-  background: color-mix(in srgb, var(--success) 8%, var(--bg-elevated));
-  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  background: color-mix(in srgb, var(--success) 6%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--success) 28%, var(--border));
 }
 
 .analytics-compare-label {
@@ -982,17 +972,11 @@ tbody tr:hover td {
 }
 
 .analytics-chart-section {
-  padding: 1.15rem 1.25rem 1.25rem;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  gap: 0.85rem;
 }
 
 .analytics-chart-section h2 {
-  margin: 0 0 0.85rem;
-  font-size: 1rem;
-  font-weight: 600;
+  margin: 0;
 }
 
 .analytics-chart-empty,
@@ -1000,9 +984,21 @@ tbody tr:hover td {
   padding: 2rem 1.5rem;
   text-align: center;
   color: var(--text-muted);
-  background: var(--bg-elevated);
+  background: transparent;
   border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius);
+}
+
+.analytics-empty p {
+  margin: 0 0 0.65rem;
+}
+
+.analytics-empty .hint {
+  margin: 0;
+}
+
+.analytics-exposure-hint {
+  margin: 0 0 1rem;
 }
 
 .mcp-usage-chart {
@@ -1012,10 +1008,10 @@ tbody tr:hover td {
 }
 
 .mcp-usage-row {
-  padding: 0.95rem 1rem;
+  padding: 0.85rem 0.9rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg) 55%, var(--bg-elevated));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-muted) 35%, var(--bg-elevated));
 }
 
 .mcp-usage-row-head {
@@ -1053,14 +1049,14 @@ tbody tr:hover td {
   align-items: center;
   gap: 0.4rem;
   flex-shrink: 0;
-  padding: 0.25rem 0.55rem;
-  border-radius: 999px;
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-sm);
   font-size: 0.78rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--success);
   background: var(--success-bg);
-  border: 1px solid color-mix(in srgb, var(--success) 32%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 28%, transparent);
 }
 
 .mcp-usage-saved-pct {
@@ -1128,12 +1124,12 @@ tbody tr:hover td {
 
 .analytics-saved-pct {
   display: inline-flex;
-  padding: 0.12rem 0.4rem;
-  border-radius: 999px;
+  padding: 0.12rem 0.35rem;
+  border-radius: var(--radius-sm);
   font-size: 0.72rem;
   font-weight: 700;
   background: var(--success-bg);
-  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 28%, transparent);
 }
 
 @media (max-width: 900px) {
@@ -1566,4 +1562,31 @@ tbody tr:hover td {
 
 .section-heading-row label {
   margin: 0;
+}
+
+.section-heading-row h2 {
+  margin: 0;
+}
+
+.tools-list .table-wrap,
+.analytics .table-wrap {
+  box-shadow: none;
+}
+
+.tools-list .filter-bar .field-filter {
+  flex: 1 1 16rem;
+  max-width: 28rem;
+  min-width: 14rem;
+  margin: 0;
+}
+
+.playground-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.analytics .analytics-compare {
+  margin-top: 0.15rem;
 }
