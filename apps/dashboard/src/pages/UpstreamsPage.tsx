@@ -271,8 +271,14 @@ export function UpstreamsPage() {
     return u.authMode === "oauth" && u.oauthStatus !== "connected";
   }
 
+  const filterOptions: { value: VisibilityFilter; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "shared", label: "Shared" },
+    { value: "personal", label: "Mine" },
+  ];
+
   return (
-    <div>
+    <div className="mcp-list">
       <div className="page-header">
         <div>
           <h1>MCPs</h1>
@@ -301,21 +307,24 @@ export function UpstreamsPage() {
         <div className="alert alert-error">{discoveryAlert}</div>
       ) : null}
 
-      <div className="toolbar">
-        <div className="field field-filter">
-          <label htmlFor="mcp-visibility-filter">Show</label>
-          <select
-            id="mcp-visibility-filter"
-            className="select"
-            value={visibilityFilter}
-            onChange={(e) =>
-              setVisibilityFilter(e.target.value as VisibilityFilter)
-            }
-          >
-            <option value="all">All</option>
-            <option value="shared">Shared</option>
-            <option value="personal">Mine</option>
-          </select>
+      <div className="filter-bar" role="group" aria-label="Filter MCPs">
+        <span className="filter-bar-label" id="mcp-visibility-filter-label">
+          Show
+        </span>
+        <div className="segmented" aria-labelledby="mcp-visibility-filter-label">
+          {filterOptions.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={visibilityFilter === opt.value}
+              className={`segmented-btn${
+                visibilityFilter === opt.value ? " is-active" : ""
+              }`}
+              onClick={() => setVisibilityFilter(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
       </div>
 

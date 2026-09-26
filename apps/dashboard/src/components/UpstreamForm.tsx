@@ -205,10 +205,7 @@ export function UpstreamForm({
         </div>
       ) : null}
 
-      <fieldset
-        disabled={readOnly}
-        style={{ border: "none", padding: 0, margin: 0 }}
-      >
+      <fieldset disabled={readOnly} className="bare-fieldset">
       <div className="field">
         <label htmlFor="upstream-name">Name</label>
         <input
@@ -458,53 +455,38 @@ export function UpstreamForm({
       )}
 
       {needsUrl ? (
-        <fieldset className="field" style={{ border: "none", padding: 0, margin: 0 }}>
-          <legend style={{ fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.5rem" }}>
-            Auth method
-          </legend>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "0.5rem",
-              marginBottom: "0.5rem",
-            }}
-          >
-            <input
-              type="radio"
-              name="authMode"
-              checked={authMode === "none"}
-              onChange={() => setAuthMode("none")}
-              style={{ marginTop: "0.2rem" }}
-            />
-            <span>
-              <strong>Static secrets / headers</strong>
-              <span className="hint" style={{ display: "block" }}>
-                API keys or custom headers stored as encrypted secrets
+        <fieldset className="field bare-fieldset">
+          <legend className="choice-legend">Auth method</legend>
+          <div className="choice-list">
+            <label className="choice-row">
+              <input
+                type="radio"
+                name="authMode"
+                checked={authMode === "none"}
+                onChange={() => setAuthMode("none")}
+              />
+              <span>
+                <strong>Static secrets / headers</strong>
+                <span className="hint">
+                  API keys or custom headers stored as encrypted secrets
+                </span>
               </span>
-            </span>
-          </label>
-          <label
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "0.5rem",
-            }}
-          >
-            <input
-              type="radio"
-              name="authMode"
-              checked={authMode === "oauth"}
-              onChange={() => setAuthMode("oauth")}
-              style={{ marginTop: "0.2rem" }}
-            />
-            <span>
-              <strong>OAuth</strong>
-              <span className="hint" style={{ display: "block" }}>
-                Recommended for Linear and other OAuth MCP servers
+            </label>
+            <label className="choice-row">
+              <input
+                type="radio"
+                name="authMode"
+                checked={authMode === "oauth"}
+                onChange={() => setAuthMode("oauth")}
+              />
+              <span>
+                <strong>OAuth</strong>
+                <span className="hint">
+                  Recommended for Linear and other OAuth MCP servers
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          </div>
         </fieldset>
       ) : null}
 
@@ -523,7 +505,7 @@ export function UpstreamForm({
 
       <div className="field">
         <label>Enabled</label>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <label className="check-row">
           <input
             type="checkbox"
             checked={enabled}
@@ -555,7 +537,7 @@ export function UpstreamForm({
 
       </fieldset>
 
-      <div className="row-actions" style={{ marginTop: "0.5rem" }}>
+      <div className="row-actions form-actions">
         {!readOnly ? (
           <button type="submit" className="btn btn-primary" disabled={submitting}>
             {submitting ? "Saving…" : isEdit ? "Save changes" : "Create MCP"}

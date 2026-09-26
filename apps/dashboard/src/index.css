@@ -759,7 +759,7 @@ tbody tr:hover td {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(10, 25, 47, 0.62);
+  background: color-mix(in srgb, var(--bg-sidebar) 72%, transparent);
   backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
@@ -774,7 +774,7 @@ tbody tr:hover td {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 1.6rem;
+  padding: 1.35rem 1.4rem 1.45rem;
   box-shadow: var(--shadow);
 }
 
@@ -1177,6 +1177,7 @@ tbody tr:hover td {
 }
 
 .result-box {
+  margin: 0;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1343,4 +1344,226 @@ tbody tr:hover td {
   font-weight: 650;
   letter-spacing: -0.02em;
   color: var(--text);
+}
+
+.page-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 44rem;
+  margin-bottom: 2rem;
+}
+
+.page-section--wide {
+  max-width: none;
+}
+
+.page-section:last-child {
+  margin-bottom: 0;
+}
+
+.page-section h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.page-section > .hint {
+  margin: 0;
+}
+
+.page-section .table-wrap {
+  margin-top: 0.15rem;
+  box-shadow: none;
+  background: transparent;
+}
+
+.page-section .table-wrap table,
+.page-section .data-table {
+  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.filter-bar-label {
+  font-size: 0.84rem;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-muted) 70%, var(--bg-elevated));
+}
+
+.segmented-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.segmented-btn:hover:not(:disabled):not(.is-active) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-elevated) 80%, transparent);
+}
+
+.segmented-btn.is-active {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--border) 70%, var(--border-strong));
+  box-shadow: var(--shadow-sm);
+}
+
+.segmented-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.mcp-list .table-wrap {
+  box-shadow: none;
+}
+
+.copy-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.55rem;
+}
+
+.copy-row .key-reveal,
+.copy-row .result-box {
+  flex: 1 1 14rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.copy-row .btn {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.alert .copy-row {
+  margin-top: 0.55rem;
+}
+
+.alert > .btn {
+  margin-top: 0.75rem;
+}
+
+.alert > p {
+  margin: 0 0 0.5rem;
+  color: inherit;
+}
+
+.grant-roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.grant-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-muted) 45%, var(--bg-elevated));
+}
+
+.grant-row-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.bare-fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.choice-legend {
+  font-size: 0.84rem;
+  font-weight: 550;
+  color: var(--text-muted);
+  margin-bottom: 0.45rem;
+  padding: 0;
+}
+
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.choice-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.choice-row input {
+  margin-top: 0.28rem;
+  flex-shrink: 0;
+}
+
+.choice-row .hint {
+  display: block;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.form-actions {
+  margin-top: 0.5rem;
+}
+
+.hint-danger {
+  color: var(--danger);
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.section-heading-row label {
+  margin: 0;
 }

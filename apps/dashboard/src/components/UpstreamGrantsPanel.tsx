@@ -74,7 +74,7 @@ export function UpstreamGrantsPanel({ upstream, onClose }: GrantsPanelProps) {
 
   return (
     <div className="stack">
-      <p className="hint" style={{ marginTop: 0 }}>
+      <p className="hint">
         Members listed here can use “{upstream.name}”. Others never see it.
         Owners and admins always have access.
       </p>
@@ -95,20 +95,10 @@ export function UpstreamGrantsPanel({ upstream, onClose }: GrantsPanelProps) {
       ) : null}
 
       {(grantsQuery.data?.length ?? 0) > 0 ? (
-        <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+        <ul className="grant-roster">
           {grantsQuery.data!.map((g) => (
-            <li
-              key={g.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "0.75rem",
-              }}
-            >
-              <span>
-                <strong>{g.username}</strong>
-              </span>
+            <li key={g.id} className="grant-row">
+              <span className="grant-row-name">{g.username}</span>
               <button
                 type="button"
                 className="btn btn-danger btn-sm"
@@ -159,7 +149,7 @@ export function UpstreamGrantsPanel({ upstream, onClose }: GrantsPanelProps) {
             ))}
           </select>
         </div>
-        <div className="row-actions">
+        <div className="row-actions form-actions">
           <button
             type="submit"
             className="btn btn-primary"
