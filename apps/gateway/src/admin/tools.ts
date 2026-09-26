@@ -1,13 +1,18 @@
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { UpdateToolSchema } from "@yusetu/shared";
+import { isElevatedRole, parseRole } from "../auth/context.js";
 import { getDb } from "../db/index.js";
-import { tools, upstreams } from "../db/schema.js";
+import { tools, upstreams, type User } from "../db/schema.js";
 import { rebuildSnapshotFromDb } from "../mcp/rebuild-snapshot.js";
+import { visibleUpstreamIdsForUser } from "../upstreams/catalog.js";
 
 export async function listTools(c: Context) {
   const db = getDb();
+  const user = c.get("user") as User;
   const upstreamId = c.req.query("upstreamId");
+  const elevated = isElevatedRole(parseRole(user.role));
+  const visible = elevated ? null : visibleUpstreamIdsForUser(user.id);
 
   const rows = db
     .select({
@@ -18,7 +23,11 @@ export async function listTools(c: Context) {
     .from(tools)
     .innerJoin(upstreams, eq(tools.upstreamId, upstreams.id))
     .all()
-    .filter((r) => !upstreamId || r.tool.upstreamId === upstreamId);
+    .filter((r) => {
+      if (upstreamId && r.tool.upstreamId !== upstreamId) return false;
+      if (visible && !visible.has(r.tool.upstreamId)) return false;
+      return true;
+    });
 
   return c.json(
     rows.map((r) => ({
