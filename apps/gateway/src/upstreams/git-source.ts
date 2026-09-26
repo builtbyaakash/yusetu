@@ -15,10 +15,14 @@ function isFullCommitSha(ref: string): boolean {
 
 /**
  * Absolute path for a managed MCP git checkout:
- * `{dataDir}/mcp-sources/{slug}/`
+ * `{dataDir}/mcp-sources/{userId}/{slug}/`
  */
-export function mcpSourceDir(dataDir: string, slug: string): string {
-  return path.resolve(dataDir, "mcp-sources", slug);
+export function mcpSourceDir(
+  dataDir: string,
+  userId: string,
+  slug: string,
+): string {
+  return path.resolve(dataDir, "mcp-sources", userId, slug);
 }
 
 /**
@@ -131,22 +135,25 @@ function isGitRepo(dir: string): boolean {
 
 export type EnsureGitCheckoutParams = {
   dataDir: string;
+  userId: string;
   slug: string;
   gitUrl: string;
   gitRef?: string | null;
+  installCommand?: string | null;
 };
 
 /**
- * Ensure `{dataDir}/mcp-sources/{slug}` is a checkout of `gitUrl` at `gitRef`.
+ * Ensure `{dataDir}/mcp-sources/{userId}/{slug}` is a checkout of `gitUrl` at `gitRef`.
  * Fresh clone is shallow (`--depth 1`). Existing dirs: fetch + hard reset to ref.
  * Returns the absolute checkout path.
  */
 export async function ensureGitCheckout(
   params: EnsureGitCheckoutParams,
 ): Promise<string> {
-  const { dataDir, slug, gitUrl } = params;
+  const { dataDir, userId, slug, gitUrl } = params;
   const ref = (params.gitRef?.trim() || DEFAULT_GIT_REF);
-  const dir = mcpSourceDir(dataDir, slug);
+  const dir = mcpSourceDir(dataDir, userId, slug);
+  const installCommand = params.installCommand?.trim() ?? "";
   const log = getLogger("control");
 
   await assertSafeGitUrl(gitUrl);
@@ -168,6 +175,9 @@ export async function ensureGitCheckout(
         ["clone", "--depth", "1", "--branch", ref, gitUrl, dir],
         {},
       );
+    }
+    if (installCommand) {
+      await runInstallCommand(dir, installCommand);
     }
     return dir;
   }
@@ -255,9 +265,10 @@ export async function runInstallCommand(
  */
 export async function removeMcpSourceDir(
   dataDir: string,
+  userId: string,
   slug: string,
 ): Promise<void> {
-  const dir = mcpSourceDir(dataDir, slug);
+  const dir = mcpSourceDir(dataDir, userId, slug);
   const log = getLogger("control");
   try {
     await fs.promises.rm(dir, { recursive: true, force: true });

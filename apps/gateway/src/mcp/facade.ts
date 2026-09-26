@@ -19,6 +19,10 @@ import { VERSION, type ToolPresentation } from "../config.js";
 import { getDb } from "../db/index.js";
 import { upstreams } from "../db/schema.js";
 import { getLogger } from "../logger.js";
+import {
+  catalogToolsForUser,
+  visibleUpstreamIdsForUser,
+} from "../upstreams/catalog.js";
 import type { ToolRouter } from "./router.js";
 import {
   META_CALL,
@@ -48,8 +52,8 @@ function jsonResult(data: unknown, isError = false): CallToolResult {
   };
 }
 
-function toolsForSlug(slug: string): SnapshotTool[] {
-  return runtimeSnapshot.list().filter((t) => t.slug === slug);
+function toolsForSlug(userId: string, slug: string): SnapshotTool[] {
+  return catalogToolsForUser(userId).filter((t) => t.slug === slug);
 }
 
 function catalogHashForTools(tools: SnapshotTool[]): string {
@@ -128,17 +132,14 @@ function estimateCallPayloadTokens(
   return estimateJsonTokens(args) + estimateJsonTokens(result.content);
 }
 
-function recordToolsListUsage(listed: Tool[]): void {
-  const allUpstream = runtimeSnapshot.list();
+function recordToolsListUsage(userId: string, listed: Tool[]): void {
+  const callerCatalog = catalogToolsForUser(userId);
   recordUsageEvent({
     kind: "tools_list",
     mcpSlug: null,
     toolName: null,
     tokensViaGateway: estimateListedToolsTokens(listed),
-    // Sole catalog counterfactual: connecting each MCP directly would expose
-    // the full union on tools/list. Secondary discovery (search / list_tools /
-    // get_tool) must not re-add these schemas to tokensIfDirect.
-    tokensIfDirect: estimateDirectCatalogTokens(allUpstream),
+    tokensIfDirect: estimateDirectCatalogTokens(callerCatalog),
   });
 }
 
@@ -187,16 +188,23 @@ const META_TOOL_NAMES = new Set([
 async function handleMetaCall(
   name: string,
   args: Record<string, unknown>,
+  userId: string,
   router: ToolRouter,
   pool: UpstreamPool,
   schemaCompression: boolean,
 ): Promise<CallToolResult> {
   if (name === META_LIST_MCPS) {
     const db = getDb();
-    const rows = db.select().from(upstreams).where(eq(upstreams.enabled, true)).all();
+    const visible = visibleUpstreamIdsForUser(userId);
+    const rows = db
+      .select()
+      .from(upstreams)
+      .where(eq(upstreams.enabled, true))
+      .all()
+      .filter((row) => visible.has(row.id));
     const mcps = rows.map((row) => {
-      const tools = toolsForSlug(row.slug);
-      const st = pool.getStatus(row.id);
+      const tools = toolsForSlug(userId, row.slug);
+      const st = pool.getStatus(userId, row.id);
       return {
         slug: row.slug,
         name: row.name,
@@ -225,9 +233,13 @@ async function handleMetaCall(
       mcp,
       k: args.k as number | undefined,
     });
+    const allowed = new Set(
+      catalogToolsForUser(userId).map((t) => `${t.slug}\0${t.originalName}`),
+    );
+    const tools = hits.filter((h) => allowed.has(`${h.mcp}\0${h.tool}`));
 
     const payload = {
-      tools: hits,
+      tools,
       k,
       hint: "Use yusetu_get_tool { mcp, tool } for inputSchema, then yusetu_call. Prefer search over listing every MCP.",
     };
@@ -251,7 +263,7 @@ async function handleMetaCall(
     const detail = parseListToolsDetail(args.detail);
     const ifNoneMatch = String(args.ifNoneMatch ?? "").trim();
 
-    const catalog = toolsForSlug(mcp);
+    const catalog = toolsForSlug(userId, mcp);
     const hash = catalogHashForTools(catalog);
 
     if (ifNoneMatch && ifNoneMatch === hash) {
@@ -301,7 +313,7 @@ async function handleMetaCall(
     if (!mcp || !tool) {
       return jsonResult({ error: "mcp and tool are required" }, true);
     }
-    const found = toolsForSlug(mcp).find((t) => t.originalName === tool);
+    const found = toolsForSlug(userId, mcp).find((t) => t.originalName === tool);
     if (!found) {
       const errPayload = {
         error: `Tool "${tool}" not found on mcp "${mcp}". Use yusetu_list_tools to discover names.`,
@@ -351,7 +363,7 @@ async function handleMetaCall(
     // Accept either original name or already-namespaced exposed name
     const exposed =
       tool.includes("__") ? tool : exposedToolName(mcp, tool);
-    const result = await router.callTool(exposed, toolArgs);
+    const result = await router.callTool(userId, exposed, toolArgs);
     recordToolCallUsage(mcp, tool, toolArgs, result);
     return result;
   }
@@ -367,6 +379,7 @@ async function handleMetaCall(
 export function createFacadeServer(
   router: ToolRouter,
   pool: UpstreamPool,
+  userId: string,
   presentation: ToolPresentation = "meta",
   inlineTinyMcps = false,
   schemaCompression = true,
@@ -381,7 +394,7 @@ export function createFacadeServer(
       const tools = [...metaToolDescriptors()];
       if (inlineTinyMcps) {
         const bySlug = new Map<string, SnapshotTool[]>();
-        for (const t of runtimeSnapshot.list()) {
+        for (const t of catalogToolsForUser(userId)) {
           const list = bySlug.get(t.slug);
           if (list) list.push(t);
           else bySlug.set(t.slug, [t]);
@@ -403,10 +416,10 @@ export function createFacadeServer(
         },
         "mcp tools/list",
       );
-      recordToolsListUsage(tools);
+      recordToolsListUsage(userId, tools);
       return { tools };
     }
-    const tools = runtimeSnapshot.list().map(toFlatListTool);
+    const tools = catalogToolsForUser(userId).map(toFlatListTool);
     getLogger("data").info(
       {
         toolPresentation: presentation,
@@ -415,7 +428,7 @@ export function createFacadeServer(
       },
       "mcp tools/list",
     );
-    recordToolsListUsage(tools);
+    recordToolsListUsage(userId, tools);
     return { tools };
   });
 
@@ -427,12 +440,19 @@ export function createFacadeServer(
 
       if (presentation === "meta") {
         if (META_TOOL_NAMES.has(name)) {
-          return handleMetaCall(name, args, router, pool, schemaCompression);
+          return handleMetaCall(
+            name,
+            args,
+            userId,
+            router,
+            pool,
+            schemaCompression,
+          );
         }
         // Allow direct slug__tool calls as escape hatch — still record usage
         if (name.includes("__")) {
           const parsed = parseExposedToolName(name);
-          const result = await router.callTool(name, args);
+          const result = await router.callTool(userId, name, args);
           if (parsed) {
             recordToolCallUsage(parsed.slug, parsed.originalName, args, result);
           }
@@ -446,7 +466,7 @@ export function createFacadeServer(
         );
       }
 
-      const result = await router.callTool(name, args);
+      const result = await router.callTool(userId, name, args);
       const parsed = parseExposedToolName(name);
       if (parsed) {
         recordToolCallUsage(parsed.slug, parsed.originalName, args, result);

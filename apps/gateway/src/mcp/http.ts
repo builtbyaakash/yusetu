@@ -3,6 +3,7 @@ import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { Context } from "hono";
+import type { AuthContext } from "../auth/context.js";
 import type { ToolPresentation } from "../config.js";
 import { getLogger } from "../logger.js";
 import { createFacadeServer } from "./facade.js";
@@ -12,7 +13,27 @@ import type { UpstreamPool } from "../upstreams/pool.js";
 type SessionEntry = {
   transport: WebStandardStreamableHTTPServerTransport;
   server: Server;
+  userId: string;
 };
+
+function requireMcpUserId(c: Context): string | Response {
+  const auth = c.get("auth") as AuthContext | undefined;
+  if (!auth?.userId) {
+    return c.json(
+      {
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message:
+            "Unauthorized: MCP tool calls require an API key or OAuth access token",
+        },
+        id: null,
+      },
+      401,
+    );
+  }
+  return auth.userId;
+}
 
 /**
  * Streamable HTTP MCP endpoint at /mcp.
@@ -28,10 +49,11 @@ export function createMcpHttpHandler(
   const sessions = new Map<string, SessionEntry>();
   const log = getLogger("data");
 
-  const newServer = () =>
+  const newServer = (userId: string) =>
     createFacadeServer(
       router,
       pool,
+      userId,
       presentation,
       inlineTinyMcps,
       schemaCompression,
@@ -65,15 +87,21 @@ export function createMcpHttpHandler(
       body = undefined;
     }
 
+    const userIdOrResponse = requireMcpUserId(c);
+    if (userIdOrResponse instanceof Response) {
+      return userIdOrResponse;
+    }
+    const userId = userIdOrResponse;
+
     if (c.req.method === "POST" && body && isInitializeRequest(body)) {
-      const server = newServer();
+      const server = newServer(userId);
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         enableJsonResponse: true,
         onsessioninitialized: (id) => {
-          sessions.set(id, { transport, server });
+          sessions.set(id, { transport, server, userId });
           log.info(
-            { sessionId: id, toolPresentation: presentation },
+            { sessionId: id, toolPresentation: presentation, userId },
             "mcp session initialized",
           );
         },
@@ -93,7 +121,7 @@ export function createMcpHttpHandler(
     }
 
     if (c.req.method === "POST") {
-      const server = newServer();
+      const server = newServer(userId);
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,

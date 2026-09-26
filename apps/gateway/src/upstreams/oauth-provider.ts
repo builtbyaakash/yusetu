@@ -8,10 +8,10 @@ import type {
   OAuthClientMetadata,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { GatewayConfig } from "../config.js";
 import { getDb } from "../db/index.js";
-import { upstreamOauth, upstreams } from "../db/schema.js";
+import { upstreamOauth, upstreams, userUpstreamOauth } from "../db/schema.js";
 import {
   decryptSecret,
   encryptSecret,
@@ -92,6 +92,76 @@ export function getUpstreamOauthRow(upstreamId: string) {
     .get();
 }
 
+export function getUserUpstreamOauthRow(userId: string, upstreamId: string) {
+  return getDb()
+    .select()
+    .from(userUpstreamOauth)
+    .where(
+      and(
+        eq(userUpstreamOauth.userId, userId),
+        eq(userUpstreamOauth.upstreamId, upstreamId),
+      ),
+    )
+    .get();
+}
+
+function ensureUserUpstreamOauthRow(userId: string, upstreamId: string): void {
+  const db = getDb();
+  const existing = getUserUpstreamOauthRow(userId, upstreamId);
+  if (!existing) {
+    db.insert(userUpstreamOauth)
+      .values({
+        id: crypto.randomUUID(),
+        userId,
+        upstreamId,
+        status: "disconnected",
+        updatedAt: new Date(),
+      })
+      .run();
+  }
+}
+
+function touchUserOauthRow(
+  userId: string,
+  upstreamId: string,
+  patch: Partial<{
+    clientInformationJson: string | null;
+    tokensJson: string | null;
+    codeVerifier: string | null;
+    pendingState: string | null;
+    discoveryJson: string | null;
+    status: UpstreamOauthStatus;
+    errorMessage: string | null;
+  }>,
+): void {
+  ensureUserUpstreamOauthRow(userId, upstreamId);
+  const db = getDb();
+  const now = new Date();
+  db.update(userUpstreamOauth)
+    .set({ ...patch, updatedAt: now })
+    .where(
+      and(
+        eq(userUpstreamOauth.userId, userId),
+        eq(userUpstreamOauth.upstreamId, upstreamId),
+      ),
+    )
+    .run();
+}
+
+function decryptTokensJson(
+  tokensJson: string | null | undefined,
+  masterKey: string,
+): OAuthTokens | undefined {
+  if (!tokensJson) return undefined;
+  try {
+    const enc = JSON.parse(tokensJson) as EncryptedSecret;
+    const plaintext = decryptSecret(enc, masterKey);
+    return JSON.parse(plaintext) as OAuthTokens;
+  } catch {
+    return undefined;
+  }
+}
+
 export function findUpstreamOauthByState(state: string) {
   return getDb()
     .select()
@@ -127,6 +197,7 @@ export function setUpstreamOauthStatus(
  */
 export class UpstreamOAuthProvider implements OAuthClientProvider {
   readonly #upstreamId: string;
+  readonly #userId: string | undefined;
   readonly #publicOrigin: string;
   readonly #masterKey: string;
   #pendingAuthorizationUrl: URL | undefined;
@@ -136,11 +207,16 @@ export class UpstreamOAuthProvider implements OAuthClientProvider {
     upstreamId: string;
     publicOrigin: string;
     masterKeyBase64: string;
+    userId?: string;
   }) {
     this.#upstreamId = opts.upstreamId;
+    this.#userId = opts.userId;
     this.#publicOrigin = opts.publicOrigin.replace(/\/$/, "");
     this.#masterKey = requireMasterKey(opts.masterKeyBase64);
     ensureUpstreamOauthRow(opts.upstreamId);
+    if (opts.userId) {
+      ensureUserUpstreamOauthRow(opts.userId, opts.upstreamId);
+    }
   }
 
   get redirectUrl(): string {
@@ -193,26 +269,29 @@ export class UpstreamOAuthProvider implements OAuthClientProvider {
   }
 
   async tokens(): Promise<OAuthTokens | undefined> {
-    const row = getUpstreamOauthRow(this.#upstreamId);
-    if (!row?.tokensJson) return undefined;
-    try {
-      const enc = JSON.parse(row.tokensJson) as EncryptedSecret;
-      const plaintext = decryptSecret(enc, this.#masterKey);
-      return JSON.parse(plaintext) as OAuthTokens;
-    } catch {
-      return undefined;
+    if (this.#userId) {
+      const userRow = getUserUpstreamOauthRow(this.#userId, this.#upstreamId);
+      const fromUser = decryptTokensJson(userRow?.tokensJson, this.#masterKey);
+      if (fromUser) return fromUser;
     }
+    const row = getUpstreamOauthRow(this.#upstreamId);
+    return decryptTokensJson(row?.tokensJson, this.#masterKey);
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
     const enc = encryptSecret(JSON.stringify(tokens), this.#masterKey);
-    touchRow(this.#upstreamId, {
+    const patch = {
       tokensJson: JSON.stringify(enc),
       codeVerifier: null,
       pendingState: null,
-      status: "connected",
+      status: "connected" as const,
       errorMessage: null,
-    });
+    };
+    if (this.#userId) {
+      touchUserOauthRow(this.#userId, this.#upstreamId, patch);
+      return;
+    }
+    touchRow(this.#upstreamId, patch);
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
@@ -224,6 +303,10 @@ export class UpstreamOAuthProvider implements OAuthClientProvider {
   }
 
   async codeVerifier(): Promise<string> {
+    if (this.#userId) {
+      const userRow = getUserUpstreamOauthRow(this.#userId, this.#upstreamId);
+      if (userRow?.codeVerifier) return userRow.codeVerifier;
+    }
     const row = getUpstreamOauthRow(this.#upstreamId);
     if (!row?.codeVerifier) {
       throw new Error("Missing PKCE code_verifier for upstream OAuth");
@@ -287,11 +370,13 @@ export function createUpstreamOAuthProvider(
   upstreamId: string,
   publicOrigin: string,
   config: GatewayConfig,
+  userId?: string,
 ): UpstreamOAuthProvider {
   return new UpstreamOAuthProvider({
     upstreamId,
     publicOrigin,
     masterKeyBase64: requireMasterKey(config.masterKeyBase64),
+    userId,
   });
 }
 

@@ -50,6 +50,7 @@ export function createUpstreamOauthHandlers(
       const { upstream } = checked;
       const denied = oauthAccessGuard(c, upstream, true);
       if (denied) return denied;
+      const user = getSessionUser(c)!;
 
       let provider;
       try {
@@ -69,7 +70,7 @@ export function createUpstreamOauthHandlers(
         );
         if (result === "AUTHORIZED") {
           setUpstreamOauthStatus(id, "connected");
-          await pool.invalidate(id);
+          await pool.invalidate(user.id, id);
           return c.json({ authorizationUrl: "", status: "connected" });
         }
         return c.json({ authorizationUrl: authorizationUrl! });
@@ -116,8 +117,9 @@ export function createUpstreamOauthHandlers(
       const denied = oauthAccessGuard(c, upstream, true);
       if (denied) return denied;
 
+      const user = getSessionUser(c)!;
       clearUpstreamOauthTokens(id);
-      await pool.invalidate(id);
+      await pool.invalidate(user.id, id);
       log.info({ upstreamId: id }, "upstream oauth disconnected");
       return c.json({ status: "disconnected", connected: false });
     },
@@ -186,7 +188,7 @@ export function createUpstreamOauthCallbackHandler(
         config,
       );
       await completeUpstreamOAuth(provider, checked.upstream.url, code);
-      await pool.invalidate(oauthRow.upstreamId);
+      await pool.invalidateAllForUpstream(oauthRow.upstreamId);
       log.info(
         { upstreamId: oauthRow.upstreamId },
         "upstream oauth connected",

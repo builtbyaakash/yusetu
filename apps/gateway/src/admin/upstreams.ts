@@ -351,8 +351,8 @@ export function createUpstreamHandlers(
             pool.setDisabled(row.id);
             return;
           }
-          if (pool.getStatus(row.id).status === "unknown") {
-            await pool.ensureStatus(row.id);
+          if (pool.getStatus(user.id, row.id).status === "unknown") {
+            await pool.ensureStatus(user.id, row.id);
           }
         }),
       );
@@ -366,7 +366,7 @@ export function createUpstreamHandlers(
               .get()?.value ?? 0;
           const status = !row.enabled
             ? ("disabled" as const)
-            : pool.getStatus(row.id).status;
+            : pool.getStatus(user.id, row.id).status;
           return serializeUpstream(row, { toolCount, status });
         }),
       );
@@ -381,10 +381,11 @@ export function createUpstreamHandlers(
       if (!canReadUpstream(row, sessionUser(c).id)) {
         return c.json({ error: "Not found" }, 404);
       }
+      const user = sessionUser(c);
       if (!row.enabled) {
         pool.setDisabled(id);
-      } else if (pool.getStatus(id).status === "unknown") {
-        await pool.ensureStatus(id);
+      } else if (pool.getStatus(user.id, id).status === "unknown") {
+        await pool.ensureStatus(user.id, id);
       }
       const toolCount =
         db
@@ -394,7 +395,7 @@ export function createUpstreamHandlers(
           .get()?.value ?? 0;
       const status = !row.enabled
         ? ("disabled" as const)
-        : pool.getStatus(row.id).status;
+        : pool.getStatus(user.id, row.id).status;
       return c.json(serializeUpstream(row, { toolCount, status }));
     },
 
@@ -494,9 +495,11 @@ export function createUpstreamHandlers(
         try {
           const checkout = await ensureGitCheckout({
             dataDir: config.dataDir,
+            userId: user.id,
             slug,
             gitUrl,
             gitRef,
+            installCommand,
           });
           if (installCommand) {
             await installGitCheckout({
@@ -516,7 +519,7 @@ export function createUpstreamHandlers(
             { slug, gitUrl, err: message },
             "git MCP source clone/install failed",
           );
-          await removeMcpSourceDir(config.dataDir, slug);
+          await removeMcpSourceDir(config.dataDir, user.id, slug);
           return c.json({ error: message }, 400);
         }
       }
@@ -555,7 +558,7 @@ export function createUpstreamHandlers(
       } catch (err) {
         db.delete(upstreams).where(eq(upstreams.id, id)).run();
         if (gitUrl) {
-          await removeMcpSourceDir(config.dataDir, slug);
+          await removeMcpSourceDir(config.dataDir, user.id, slug);
         }
         throw err;
       }
@@ -575,7 +578,7 @@ export function createUpstreamHandlers(
         );
       } else {
         try {
-          const result = await discoverUpstreamTools(id, pool);
+          const result = await discoverUpstreamTools(id, user.id, pool);
           discovered = result.discovered;
         } catch (err) {
           discoveryError = err instanceof Error ? err.message : String(err);
@@ -597,7 +600,7 @@ export function createUpstreamHandlers(
         0;
       const status = !row.enabled
         ? ("disabled" as const)
-        : pool.getStatus(id).status;
+        : pool.getStatus(user.id, id).status;
       return c.json(
         {
           ...serializeUpstream(row, { toolCount, status }),
@@ -623,6 +626,7 @@ export function createUpstreamHandlers(
       if (!row) return c.json({ error: "Not found" }, 404);
       const blocked = mutateGuard(c, row);
       if (blocked) return blocked;
+      const user = sessionUser(c);
 
       const data = parsed.data;
       const nextTransport = data.transport ?? row.transport;
@@ -734,9 +738,11 @@ export function createUpstreamHandlers(
         try {
           const checkout = await ensureGitCheckout({
             dataDir: config.dataDir,
+            userId: user.id,
             slug: row.slug,
             gitUrl: nextGitUrl,
             gitRef: nextGitRef,
+            installCommand: nextInstallCommand,
           });
           if (nextInstallCommand) {
             await installGitCheckout({
@@ -761,7 +767,7 @@ export function createUpstreamHandlers(
         }
       } else if (!nextGitUrl && row.gitUrl) {
         // Cleared git source — drop managed checkout; keep client cwd if provided.
-        await removeMcpSourceDir(config.dataDir, row.slug);
+        await removeMcpSourceDir(config.dataDir, user.id, row.slug);
         if (data.cwd === undefined) {
           // Previous cwd was the managed path; clear it unless client set a new one.
           cwd = null;
@@ -805,7 +811,7 @@ export function createUpstreamHandlers(
         ensureUpstreamOauthRow(id);
       }
 
-      await pool.invalidate(id);
+      await pool.invalidateAllForUpstream(id);
       if (!(data.enabled ?? row.enabled)) {
         pool.setDisabled(id);
       }
@@ -835,7 +841,7 @@ export function createUpstreamHandlers(
         );
       } else {
         try {
-          const result = await discoverUpstreamTools(id, pool);
+          const result = await discoverUpstreamTools(id, user.id, pool);
           discovered = result.discovered;
         } catch (err) {
           discoveryError = err instanceof Error ? err.message : String(err);
@@ -856,7 +862,7 @@ export function createUpstreamHandlers(
         0;
       const status = !enabled
         ? ("disabled" as const)
-        : pool.getStatus(id).status;
+        : pool.getStatus(user.id, id).status;
       return c.json({
         ...serializeUpstream(updated, { toolCount, status }),
         ...(discovered !== undefined ? { discovered } : {}),
@@ -884,13 +890,14 @@ export function createUpstreamHandlers(
       if (!row) return c.json({ error: "Not found" }, 404);
       const blocked = mutateGuard(c, row);
       if (blocked) return blocked;
+      const user = sessionUser(c);
 
       const removed = deleteSecrets(id, [keyName]);
       if (removed === 0) {
         return c.json({ error: "Secret key not found" }, 404);
       }
 
-      await pool.invalidate(id);
+      await pool.invalidateAllForUpstream(id);
       if (!row.enabled) {
         pool.setDisabled(id);
       }
@@ -905,7 +912,7 @@ export function createUpstreamHandlers(
           .get()?.value ?? 0;
       const status = !row.enabled
         ? ("disabled" as const)
-        : pool.getStatus(id).status;
+        : pool.getStatus(user.id, id).status;
       return c.json(serializeUpstream(row, { toolCount, status }));
     },
 
@@ -917,12 +924,13 @@ export function createUpstreamHandlers(
       if (!row) return c.json({ error: "Not found" }, 404);
       const blocked = mutateGuard(c, row);
       if (blocked) return blocked;
+      const user = sessionUser(c);
 
-      await pool.invalidate(id);
+      await pool.invalidateAllForUpstream(id);
       db.delete(upstreams).where(eq(upstreams.id, id)).run();
       rebuildSnapshotFromDb();
       if (row.gitUrl) {
-        await removeMcpSourceDir(config.dataDir, row.slug);
+        await removeMcpSourceDir(config.dataDir, user.id, row.slug);
       }
       log.info({ upstreamId: id, slug: row.slug }, "upstream deleted");
       return c.body(null, 204);
@@ -938,8 +946,9 @@ export function createUpstreamHandlers(
         return c.json({ error: "Not found" }, 404);
       }
 
+      const user = sessionUser(c);
       try {
-        await discoverUpstreamTools(id, pool);
+        await discoverUpstreamTools(id, user.id, pool);
         const refreshed = db
           .select()
           .from(upstreams)
@@ -954,7 +963,7 @@ export function createUpstreamHandlers(
         return c.json(
           serializeUpstream(refreshed, {
             toolCount,
-            status: pool.getStatus(id).status,
+            status: pool.getStatus(user.id, id).status,
           }),
         );
       } catch (err) {

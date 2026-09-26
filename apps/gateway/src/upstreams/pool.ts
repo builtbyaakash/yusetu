@@ -6,28 +6,33 @@ import {
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { GatewayConfig } from "../config.js";
 import { getDb } from "../db/index.js";
 import {
   settings,
   upstreamSecrets,
   upstreams,
+  userUpstreamSecrets,
   type Upstream,
 } from "../db/schema.js";
 import { getLogger } from "../logger.js";
 import { decryptSecret, requireMasterKey } from "../secrets/crypto.js";
 import { assertSafeUpstreamUrl } from "../secrets/ssrf.js";
+import { poolClientKey } from "./catalog.js";
 import {
   buildDockerStdioLaunch,
   isDockerAvailable,
   resolveIsolationImage,
 } from "./docker-isolate.js";
+import { ensureGitCheckout } from "./git-source.js";
 import {
   createUpstreamOAuthProvider,
   resolvePublicOrigin,
   type UpstreamOAuthProvider,
 } from "./oauth-provider.js";
+
+export { poolClientKey } from "./catalog.js";
 
 type PooledClient = {
   client: Client;
@@ -74,77 +79,108 @@ type UpstreamStatusEntry = {
 export class UpstreamPool {
   #clients = new Map<string, PooledClient>();
   #connecting = new Map<string, Promise<Client>>();
-  /** Debounces concurrent status probes for the same upstream. */
+  /** Debounces concurrent status probes for the same pool key. */
   #probing = new Map<string, Promise<UpstreamStatusEntry>>();
   #config: GatewayConfig;
   #statuses = new Map<string, UpstreamStatusEntry>();
+  #disabledUpstreams = new Set<string>();
 
   constructor(config: GatewayConfig) {
     this.#config = config;
   }
 
-  getStatus(upstreamId: string): UpstreamStatusEntry {
-    return this.#statuses.get(upstreamId) ?? { status: "unknown" as const };
+  getStatus(userId: string, upstreamId: string): UpstreamStatusEntry {
+    if (this.#disabledUpstreams.has(upstreamId)) {
+      return { status: "disabled" };
+    }
+    return (
+      this.#statuses.get(poolClientKey(userId, upstreamId)) ?? {
+        status: "unknown" as const,
+      }
+    );
   }
 
   setDisabled(upstreamId: string): void {
-    this.#statuses.set(upstreamId, { status: "disabled" });
+    this.#disabledUpstreams.add(upstreamId);
+  }
+
+  clearDisabled(upstreamId: string): void {
+    this.#disabledUpstreams.delete(upstreamId);
   }
 
   /**
    * Ensure a non-unknown status by attempting connect (reuses getClient).
-   * Concurrent callers for the same id share one in-flight probe.
+   * Concurrent callers for the same pool key share one in-flight probe.
    */
-  async ensureStatus(upstreamId: string): Promise<UpstreamStatusEntry> {
-    const existing = this.#statuses.get(upstreamId);
+  async ensureStatus(
+    userId: string,
+    upstreamId: string,
+  ): Promise<UpstreamStatusEntry> {
+    const key = poolClientKey(userId, upstreamId);
+    const existing = this.#statuses.get(key);
     if (existing) return existing;
 
-    const inflight = this.#probing.get(upstreamId);
+    const inflight = this.#probing.get(key);
     if (inflight) return inflight;
 
     const promise = (async (): Promise<UpstreamStatusEntry> => {
       try {
-        await this.getClient(upstreamId);
+        await this.getClient(userId, upstreamId);
       } catch {
         // #connect already recorded unhealthy / disabled
       }
-      return this.getStatus(upstreamId);
+      return this.getStatus(userId, upstreamId);
     })();
 
-    this.#probing.set(upstreamId, promise);
+    this.#probing.set(key, promise);
     try {
       return await promise;
     } finally {
-      this.#probing.delete(upstreamId);
+      this.#probing.delete(key);
     }
   }
 
   /**
-   * Mark disabled upstreams and kick off background probes for enabled ones.
-   * Does not block; safe to call on gateway start.
+   * Pool clients are per-user; nothing to warm without a caller userId.
    */
   warmAll(): void {
-    const db = getDb();
-    const rows = db.select().from(upstreams).all();
-    for (const row of rows) {
-      if (!row.enabled) {
-        this.setDisabled(row.id);
-      } else {
-        void this.ensureStatus(row.id);
-      }
-    }
+    getLogger("control").info(
+      "warmAll skipped — upstream clients are keyed by userId:upstreamId",
+    );
   }
 
-  async invalidate(upstreamId: string): Promise<void> {
-    this.#statuses.delete(upstreamId);
-    const existing = this.#clients.get(upstreamId);
+  async invalidate(userId: string, upstreamId: string): Promise<void> {
+    const key = poolClientKey(userId, upstreamId);
+    this.#statuses.delete(key);
+    const existing = this.#clients.get(key);
     if (existing) {
-      this.#clients.delete(upstreamId);
+      this.#clients.delete(key);
       try {
         await existing.close();
       } catch {
         /* ignore */
       }
+    }
+  }
+
+  /** Drop every cached client for an upstream (admin definition / shared secret changes). */
+  async invalidateAllForUpstream(upstreamId: string): Promise<void> {
+    const suffix = `:${upstreamId}`;
+    for (const key of [...this.#clients.keys()]) {
+      if (!key.endsWith(suffix)) continue;
+      this.#statuses.delete(key);
+      const existing = this.#clients.get(key);
+      this.#clients.delete(key);
+      if (existing) {
+        try {
+          await existing.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    for (const key of [...this.#statuses.keys()]) {
+      if (key.endsWith(suffix)) this.#statuses.delete(key);
     }
   }
 
@@ -154,17 +190,17 @@ export class UpstreamPool {
     await Promise.allSettled(closes);
   }
 
-  loadSecrets(upstreamId: string): Record<string, string> {
+  loadSecrets(userId: string, upstreamId: string): Record<string, string> {
     const db = getDb();
-    const rows = db
+    const masterKey = requireMasterKey(this.#config.masterKeyBase64);
+    const out: Record<string, string> = {};
+
+    const baseRows = db
       .select()
       .from(upstreamSecrets)
       .where(eq(upstreamSecrets.upstreamId, upstreamId))
       .all();
-    if (rows.length === 0) return {};
-    const masterKey = requireMasterKey(this.#config.masterKeyBase64);
-    const out: Record<string, string> = {};
-    for (const row of rows) {
+    for (const row of baseRows) {
       out[row.keyName] = decryptSecret(
         {
           ciphertext: row.ciphertext,
@@ -174,6 +210,28 @@ export class UpstreamPool {
         masterKey,
       );
     }
+
+    const overlayRows = db
+      .select()
+      .from(userUpstreamSecrets)
+      .where(
+        and(
+          eq(userUpstreamSecrets.userId, userId),
+          eq(userUpstreamSecrets.upstreamId, upstreamId),
+        ),
+      )
+      .all();
+    for (const row of overlayRows) {
+      out[row.keyName] = decryptSecret(
+        {
+          ciphertext: row.ciphertext,
+          iv: row.iv,
+          authTag: row.authTag,
+        },
+        masterKey,
+      );
+    }
+
     return out;
   }
 
@@ -187,26 +245,30 @@ export class UpstreamPool {
     return row?.value === "true" || row?.value === "1";
   }
 
-  async getClient(upstreamId: string): Promise<Client> {
-    const cached = this.#clients.get(upstreamId);
+  async getClient(userId: string, upstreamId: string): Promise<Client> {
+    const key = poolClientKey(userId, upstreamId);
+    const cached = this.#clients.get(key);
     if (cached) {
       cached.lastUsedAt = Date.now();
       return cached.client;
     }
 
-    const inflight = this.#connecting.get(upstreamId);
+    const inflight = this.#connecting.get(key);
     if (inflight) return inflight;
 
-    const promise = this.#connect(upstreamId);
-    this.#connecting.set(upstreamId, promise);
+    const promise = this.#connect(userId, upstreamId);
+    this.#connecting.set(key, promise);
     try {
       return await promise;
     } finally {
-      this.#connecting.delete(upstreamId);
+      this.#connecting.delete(key);
     }
   }
 
-  #oauthProviderFor(upstream: Upstream): UpstreamOAuthProvider | undefined {
+  #oauthProviderFor(
+    upstream: Upstream,
+    userId: string,
+  ): UpstreamOAuthProvider | undefined {
     if (upstream.authMode !== "oauth") return undefined;
     if (upstream.transport === "stdio" || !upstream.url) return undefined;
     const publicOrigin = resolvePublicOrigin(
@@ -217,11 +279,13 @@ export class UpstreamPool {
       upstream.id,
       publicOrigin,
       this.#config,
+      userId,
     );
   }
 
-  async #connect(upstreamId: string): Promise<Client> {
-    const log = getLogger("data", { upstreamId });
+  async #connect(userId: string, upstreamId: string): Promise<Client> {
+    const key = poolClientKey(userId, upstreamId);
+    const log = getLogger("data", { upstreamId, userId });
     const db = getDb();
     const upstream = db
       .select()
@@ -233,21 +297,27 @@ export class UpstreamPool {
       throw new Error(`Upstream not found: ${upstreamId}`);
     }
     if (!upstream.enabled) {
-      this.#statuses.set(upstreamId, { status: "disabled" });
+      this.setDisabled(upstreamId);
       throw new Error(`Upstream disabled: ${upstream.slug}`);
     }
+    this.clearDisabled(upstreamId);
 
-    const secrets = this.loadSecrets(upstreamId);
+    const secrets = this.loadSecrets(userId, upstreamId);
     const { env, headers } = splitSecrets(secrets);
 
     try {
-      const { client, close } = await this.#openTransport(upstream, env, headers);
-      this.#clients.set(upstreamId, {
+      const { client, close } = await this.#openTransport(
+        userId,
+        upstream,
+        env,
+        headers,
+      );
+      this.#clients.set(key, {
         client,
         close,
         lastUsedAt: Date.now(),
       });
-      this.#statuses.set(upstreamId, { status: "healthy" });
+      this.#statuses.set(key, { status: "healthy" });
       log.info({ slug: upstream.slug, transport: upstream.transport }, "upstream connected");
       return client;
     } catch (err) {
@@ -258,7 +328,7 @@ export class UpstreamPool {
       ) {
         message = "OAuth required — connect from dashboard";
       }
-      this.#statuses.set(upstreamId, { status: "unhealthy", error: message });
+      this.#statuses.set(key, { status: "unhealthy", error: message });
       log.error({ err: message, slug: upstream.slug }, "upstream connect failed");
       throw err instanceof UnauthorizedError
         ? new Error(message)
@@ -266,7 +336,25 @@ export class UpstreamPool {
     }
   }
 
+  async #resolveStdioCwd(
+    userId: string,
+    upstream: Upstream,
+  ): Promise<string | undefined> {
+    if (upstream.gitUrl?.trim()) {
+      return ensureGitCheckout({
+        dataDir: this.#config.dataDir,
+        userId,
+        slug: upstream.slug,
+        gitUrl: upstream.gitUrl,
+        gitRef: upstream.gitRef,
+        installCommand: upstream.installCommand,
+      });
+    }
+    return upstream.cwd?.trim() || undefined;
+  }
+
   async #openTransport(
+    userId: string,
     upstream: Upstream,
     env: Record<string, string>,
     headers: Record<string, string>,
@@ -289,6 +377,7 @@ export class UpstreamPool {
       let spawnCommand = upstream.command;
       let spawnArgs = innerArgs;
       let childEnv: Record<string, string>;
+      const checkoutAbs = await this.#resolveStdioCwd(userId, upstream);
 
       if (isolation === "docker") {
         const dockerCfg = {
@@ -301,8 +390,7 @@ export class UpstreamPool {
             `Upstream ${upstream.slug} requires Docker isolation but Docker is not available. Install Docker or set isolation=host (trusted repos only).`,
           );
         }
-        const checkout = upstream.cwd?.trim();
-        if (!checkout) {
+        if (!checkoutAbs) {
           throw new Error(
             `Docker isolation for ${upstream.slug} requires a checkout cwd (Git-sourced MCP)`,
           );
@@ -315,7 +403,7 @@ export class UpstreamPool {
         // Only that MCP's secrets — not the gateway process environment.
         const launch = buildDockerStdioLaunch({
           slug: upstream.slug,
-          checkoutAbs: checkout,
+          checkoutAbs,
           command: upstream.command,
           args: innerArgs,
           env: {
@@ -336,7 +424,7 @@ export class UpstreamPool {
           childEnv.UV_PYTHON_PREFERENCE =
             childEnv.UV_PYTHON_PREFERENCE ?? "only-managed";
         }
-        getLogger("data", { upstreamId: upstream.id }).info(
+        getLogger("data", { upstreamId: upstream.id, userId }).info(
           {
             slug: upstream.slug,
             envKeys: Object.keys(env).sort(),
@@ -349,7 +437,7 @@ export class UpstreamPool {
       const transport = new StdioClientTransport({
         command: spawnCommand,
         args: spawnArgs,
-        cwd: isolation === "docker" ? undefined : upstream.cwd ?? undefined,
+        cwd: isolation === "docker" ? undefined : checkoutAbs,
         env: childEnv,
         // Must drain piped stderr or verbose servers fill the pipe and deadlock.
         stderr: "pipe",
@@ -357,6 +445,7 @@ export class UpstreamPool {
       const stderrLog = getLogger("data", {
         upstreamId: upstream.id,
         slug: upstream.slug,
+        userId,
       });
       transport.stderr?.on("data", (chunk: Buffer | string) => {
         const text = String(chunk).trimEnd();
@@ -384,7 +473,7 @@ export class UpstreamPool {
       headers: { ...headers },
     };
 
-    const authProvider = this.#oauthProviderFor(upstream);
+    const authProvider = this.#oauthProviderFor(upstream, userId);
 
     if (upstream.transport === "streamable-http") {
       const transport = new StreamableHTTPClientTransport(new URL(upstream.url), {

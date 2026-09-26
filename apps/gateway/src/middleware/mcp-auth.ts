@@ -80,10 +80,7 @@ function resolveOauthAccessToken(
 export function createMcpAuthMiddleware(config: GatewayConfig) {
   return createMiddleware<{ Variables: Partial<McpAuthVariables> }>(
     async (c, next) => {
-      if (!mcpAuthRequired(config)) {
-        await next();
-        return;
-      }
+      const required = mcpAuthRequired(config);
 
       const xApiKey = c.req.header("x-api-key")?.trim();
       const authHeader = c.req.header("authorization");
@@ -96,28 +93,26 @@ export function createMcpAuthMiddleware(config: GatewayConfig) {
 
       if (xApiKey) {
         auth = resolveApiKey(xApiKey);
+      } else if (bearer) {
+        auth = resolveOauthAccessToken(bearer, config.enableMcpOauth);
         if (!auth) {
-          return unauthorized(c, config.enableMcpOauth);
+          auth = resolveApiKey(bearer);
         }
+      }
+
+      if (auth) {
         c.set("auth", auth);
+      }
+
+      if (!required) {
         await next();
         return;
       }
 
-      if (!bearer) {
-        return unauthorized(c, config.enableMcpOauth);
-      }
-
-      auth = resolveOauthAccessToken(bearer, config.enableMcpOauth);
-      if (!auth) {
-        auth = resolveApiKey(bearer);
-      }
-
       if (!auth) {
         return unauthorized(c, config.enableMcpOauth);
       }
 
-      c.set("auth", auth);
       await next();
     },
   );

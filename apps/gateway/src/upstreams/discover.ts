@@ -14,6 +14,7 @@ export type DiscoverResult = {
 
 export async function discoverUpstreamTools(
   upstreamId: string,
+  userId: string,
   pool: UpstreamPool,
 ): Promise<DiscoverResult> {
   const log = getLogger("control", { upstreamId });
@@ -28,8 +29,8 @@ export async function discoverUpstreamTools(
     throw new Error("Upstream not found");
   }
 
-  await pool.invalidate(upstreamId);
-  const client = await pool.getClient(upstreamId);
+  await pool.invalidate(userId, upstreamId);
+  const client = await pool.getClient(userId, upstreamId);
   const listed = await client.listTools();
   const now = new Date();
   let upserted = 0;

@@ -4,20 +4,22 @@ import { getDb } from "../db/index.js";
 import { upstreams } from "../db/schema.js";
 import { formatToolArgs, getLogger } from "../logger.js";
 import { runtimeSnapshot } from "../mcp/snapshot.js";
+import { isCatalogToolVisible } from "../upstreams/catalog.js";
 import type { UpstreamPool } from "../upstreams/pool.js";
 
 export class ToolRouter {
   constructor(private readonly pool: UpstreamPool) {}
 
   async callTool(
+    userId: string,
     exposedName: string,
     args: Record<string, unknown>,
   ): Promise<CallToolResult> {
     const log = getLogger("data");
     const started = Date.now();
     const meta = runtimeSnapshot.get(exposedName);
-    if (!meta) {
-      log.warn({ tool: exposedName }, "tool not found or disabled");
+    if (!isCatalogToolVisible(userId, meta)) {
+      log.warn({ tool: exposedName, userId }, "tool not found or disabled");
       return {
         content: [
           {
@@ -30,7 +32,7 @@ export class ToolRouter {
     }
 
     try {
-      const client = await this.pool.getClient(meta.upstreamId);
+      const client = await this.pool.getClient(userId, meta.upstreamId);
       const timeoutMs =
         getDb()
           .select({ timeoutMs: upstreams.timeoutMs })
@@ -51,6 +53,7 @@ export class ToolRouter {
         {
           tool: exposedName,
           upstreamId: meta.upstreamId,
+          userId,
           latencyMs: Date.now() - started,
           args: formatToolArgs(args),
         },
@@ -64,6 +67,7 @@ export class ToolRouter {
         {
           tool: exposedName,
           upstreamId: meta.upstreamId,
+          userId,
           latencyMs: Date.now() - started,
           err: message,
           args: formatToolArgs(args),
