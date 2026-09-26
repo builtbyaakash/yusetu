@@ -155,7 +155,7 @@ async function main() {
   const bobCatalog = catalogToolsForUser(userB);
   assert(
     aliceCatalog.some((t) => t.exposedName === "shared-mcp__ping"),
-    "alice sees shared tool",
+    "alice (owner) sees shared tool via elevated bypass",
   );
   assert(
     !aliceCatalog.some((t) => t.exposedName === "private-b__secret"),
@@ -166,13 +166,17 @@ async function main() {
     "bob sees personal tool",
   );
   assert(
-    bobCatalog.some((t) => t.exposedName === "shared-mcp__ping"),
-    "bob sees shared tool",
+    !bobCatalog.some((t) => t.exposedName === "shared-mcp__ping"),
+    "bob (member, no grant) must not see shared tool",
   );
 
   const aliceVisible = visibleUpstreamIdsForUser(userA);
   assert(aliceVisible.has(sharedId), "alice visible upstreams include shared");
   assert(!aliceVisible.has(personalBId), "alice must not see bob upstream id");
+
+  const bobVisible = visibleUpstreamIdsForUser(userB);
+  assert(bobVisible.has(personalBId), "bob visible includes own personal");
+  assert(!bobVisible.has(sharedId), "bob without grant omits shared");
 
   closeDb();
   fs.rmSync(dataDir, { recursive: true, force: true });

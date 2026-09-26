@@ -62,6 +62,12 @@ export async function updateTool(c: Context) {
   const row = db.select().from(tools).where(eq(tools.id, id)).get();
   if (!row) return c.json({ error: "Not found" }, 404);
 
+  const user = c.get("user") as User;
+  const elevated = isElevatedRole(parseRole(user.role));
+  if (!elevated && !visibleUpstreamIdsForUser(user.id).has(row.upstreamId)) {
+    return c.json({ error: "Not found" }, 404);
+  }
+
   db.update(tools)
     .set({ enabled: parsed.data.enabled })
     .where(eq(tools.id, id))
