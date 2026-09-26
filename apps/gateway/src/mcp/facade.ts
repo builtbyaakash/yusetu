@@ -140,13 +140,14 @@ function recordToolsListUsage(userId: string, listed: Tool[]): void {
     toolName: null,
     tokensViaGateway: estimateListedToolsTokens(listed),
     tokensIfDirect: estimateDirectCatalogTokens(callerCatalog),
+    userId,
   });
 }
 
 function recordListToolsUsage(
   mcp: string,
   payload: unknown,
-  opts?: { toolName?: string },
+  opts?: { toolName?: string; userId?: string },
 ): void {
   const toolName = opts?.toolName ?? META_LIST_TOOLS;
   // via = actual meta discovery traffic; ifDirect = 0 so we don't double-count
@@ -157,6 +158,7 @@ function recordListToolsUsage(
     toolName,
     tokensViaGateway: estimateJsonTokens(payload),
     tokensIfDirect: 0,
+    userId: opts?.userId,
   });
 }
 
@@ -165,6 +167,7 @@ function recordToolCallUsage(
   toolName: string,
   args: Record<string, unknown>,
   result: CallToolResult,
+  userId?: string,
 ): void {
   const tokens = estimateCallPayloadTokens(args, result);
   recordUsageEvent({
@@ -174,6 +177,7 @@ function recordToolCallUsage(
     tokensViaGateway: tokens,
     // Same payload size if the agent had called the MCP directly.
     tokensIfDirect: tokens,
+    userId,
   });
 }
 
@@ -250,6 +254,7 @@ async function handleMetaCall(
       tokensViaGateway: estimateJsonTokens(payload),
       // Catalog counterfactual lives on tools/list only — do not re-count schemas.
       tokensIfDirect: 0,
+      userId,
     });
     return jsonResult(payload);
   }
@@ -273,7 +278,7 @@ async function handleMetaCall(
         hash,
         toolCount: catalog.length,
       };
-      recordListToolsUsage(mcp, unchangedPayload);
+      recordListToolsUsage(mcp, unchangedPayload, { userId });
       return jsonResult(unchangedPayload);
     }
 
@@ -291,7 +296,7 @@ async function handleMetaCall(
         mcp,
         hash,
       };
-      recordListToolsUsage(mcp, errPayload);
+      recordListToolsUsage(mcp, errPayload, { userId });
       return jsonResult(errPayload, true);
     }
 
@@ -303,7 +308,7 @@ async function handleMetaCall(
       tools,
       hint: "Prefer yusetu_get_tool { mcp, tool } for inputSchema before yusetu_call. Use query to narrow; avoid detail=full unless needed.",
     };
-    recordListToolsUsage(mcp, payload);
+    recordListToolsUsage(mcp, payload, { userId });
     return jsonResult(payload);
   }
 
@@ -326,6 +331,7 @@ async function handleMetaCall(
         toolName: META_GET_TOOL,
         tokensViaGateway: estimateJsonTokens(errPayload),
         tokensIfDirect: 0,
+        userId,
       });
       return jsonResult(errPayload, true);
     }
@@ -346,6 +352,7 @@ async function handleMetaCall(
       tokensViaGateway: estimateJsonTokens(payload),
       // Schema already in tools/list ifDirect; via still counts compressed fetch cost.
       tokensIfDirect: 0,
+      userId,
     });
     return jsonResult(payload);
   }
@@ -364,7 +371,7 @@ async function handleMetaCall(
     const exposed =
       tool.includes("__") ? tool : exposedToolName(mcp, tool);
     const result = await router.callTool(userId, exposed, toolArgs);
-    recordToolCallUsage(mcp, tool, toolArgs, result);
+    recordToolCallUsage(mcp, tool, toolArgs, result, userId);
     return result;
   }
 
@@ -454,7 +461,7 @@ export function createFacadeServer(
           const parsed = parseExposedToolName(name);
           const result = await router.callTool(userId, name, args);
           if (parsed) {
-            recordToolCallUsage(parsed.slug, parsed.originalName, args, result);
+            recordToolCallUsage(parsed.slug, parsed.originalName, args, result, userId);
           }
           return result;
         }
@@ -469,7 +476,7 @@ export function createFacadeServer(
       const result = await router.callTool(userId, name, args);
       const parsed = parseExposedToolName(name);
       if (parsed) {
-        recordToolCallUsage(parsed.slug, parsed.originalName, args, result);
+        recordToolCallUsage(parsed.slug, parsed.originalName, args, result, userId);
       }
       return result;
     },

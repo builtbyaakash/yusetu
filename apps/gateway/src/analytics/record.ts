@@ -16,6 +16,8 @@ export type RecordUsageInput = {
   tokensViaGateway: number;
   tokensIfDirect: number;
   callCount?: number;
+  /** Caller user id when known (session / API key / OAuth). */
+  userId?: string | null;
 };
 
 /**
@@ -35,6 +37,7 @@ export function recordUsageEvent(input: RecordUsageInput): void {
         tokensViaGateway: Math.max(0, Math.round(input.tokensViaGateway)),
         tokensIfDirect: Math.max(0, Math.round(input.tokensIfDirect)),
         callCount: input.callCount ?? 1,
+        userId: input.userId ?? null,
       })
       .run();
   } catch (err) {
