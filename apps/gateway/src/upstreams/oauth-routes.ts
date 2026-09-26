@@ -1,5 +1,7 @@
 import type { Context } from "hono";
 import type { GatewayConfig } from "../config.js";
+import { isElevatedRole, parseRole } from "../auth/context.js";
+import { getSessionUser } from "../auth/routes.js";
 import { getLogger } from "../logger.js";
 import { getPublicOrigin } from "../oauth/metadata.js";
 import type { UpstreamPool } from "./pool.js";
@@ -16,7 +18,19 @@ import {
 } from "./oauth-provider.js";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/index.js";
-import { upstreams } from "../db/schema.js";
+import { upstreams, type Upstream } from "../db/schema.js";
+
+function oauthAccessGuard(c: Context, row: Upstream, mutate: boolean) {
+  const user = getSessionUser(c);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+  if (row.visibility === "personal" && row.ownerUserId !== user.id) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  if (mutate && row.visibility === "shared" && !isElevatedRole(parseRole(user.role))) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+  return null;
+}
 
 export function createUpstreamOauthHandlers(
   config: GatewayConfig,
@@ -34,6 +48,8 @@ export function createUpstreamOauthHandlers(
         return c.json({ error: checked.error }, checked.status);
       }
       const { upstream } = checked;
+      const denied = oauthAccessGuard(c, upstream, true);
+      if (denied) return denied;
 
       let provider;
       try {
@@ -75,6 +91,8 @@ export function createUpstreamOauthHandlers(
         .where(eq(upstreams.id, id))
         .get();
       if (!upstream) return c.json({ error: "Not found" }, 404);
+      const denied = oauthAccessGuard(c, upstream, false);
+      if (denied) return denied;
 
       const row = getUpstreamOauthRow(id);
       const status = row?.status ?? "disconnected";
@@ -95,6 +113,8 @@ export function createUpstreamOauthHandlers(
         .where(eq(upstreams.id, id))
         .get();
       if (!upstream) return c.json({ error: "Not found" }, 404);
+      const denied = oauthAccessGuard(c, upstream, true);
+      if (denied) return denied;
 
       clearUpstreamOauthTokens(id);
       await pool.invalidate(id);
