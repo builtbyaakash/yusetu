@@ -36,6 +36,20 @@ export const PatchMemberRoleSchema = z.object({
 });
 export type PatchMemberRole = z.infer<typeof PatchMemberRoleSchema>;
 
+/** Allow a team user to see a shared upstream. */
+export const CreateUpstreamGrantSchema = z.object({
+  userId: z.string().min(1),
+});
+export type CreateUpstreamGrant = z.infer<typeof CreateUpstreamGrantSchema>;
+
+export type UpstreamGrant = {
+  id: string;
+  upstreamId: string;
+  userId: string;
+  username: string;
+  createdAt: string;
+};
+
 export const UpstreamVisibilitySchema = z.enum(["shared", "personal"]);
 export type UpstreamVisibility = z.infer<typeof UpstreamVisibilitySchema>;
 
@@ -150,7 +164,7 @@ export type UpdateTool = z.infer<typeof UpdateToolSchema>;
 
 export const PlaygroundCallSchema = z.object({
   tool: z.string().min(1),
-  arguments: z.record(z.unknown()).default({}),
+  arguments: z.record(z.string(), z.unknown()).default({}),
 });
 export type PlaygroundCall = z.infer<typeof PlaygroundCallSchema>;
 

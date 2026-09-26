@@ -24,6 +24,11 @@ import { createMcpHttpHandler } from "./mcp/http.js";
 import type { ToolRouter } from "./mcp/router.js";
 import { requireElevated, requireSession } from "./middleware/auth.js";
 import {
+  createUpstreamGrant,
+  listUpstreamGrants,
+  revokeUpstreamGrant,
+} from "./admin/grants.js";
+import {
   createInvite,
   handleJoin,
   listInvites,
@@ -91,6 +96,21 @@ export function createApp(
   app.delete("/api/upstreams/:id", requireSession, (c) => upstreams.remove(c));
   app.delete("/api/upstreams/:id/secrets/:key", requireSession, (c) =>
     upstreams.removeSecret(c),
+  );
+  app.get(
+    "/api/upstreams/:id/grants",
+    requireElevated,
+    listUpstreamGrants,
+  );
+  app.post(
+    "/api/upstreams/:id/grants",
+    requireElevated,
+    createUpstreamGrant,
+  );
+  app.delete(
+    "/api/upstreams/:id/grants/:userId",
+    requireElevated,
+    revokeUpstreamGrant,
   );
   app.post("/api/upstreams/:id/discover", requireSession, (c) =>
     upstreams.discover(c),
