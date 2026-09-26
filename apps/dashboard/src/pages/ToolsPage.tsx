@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { toolsApi, upstreamsApi } from "../api";
+import { Pagination, useClientPage } from "../components/Pagination";
 import { Toggle } from "../components/Toggle";
 
 export function ToolsPage() {
@@ -27,6 +28,12 @@ export function ToolsPage() {
   });
 
   const tools = useMemo(() => toolsQuery.data ?? [], [toolsQuery.data]);
+  const {
+    page: toolsPage,
+    setPage: setToolsPage,
+    pageItems: pagedTools,
+    total: toolsTotal,
+  } = useClientPage(tools);
 
   return (
     <div className="tools-list">
@@ -47,7 +54,10 @@ export function ToolsPage() {
             id="tools-upstream"
             className="select"
             value={upstreamId}
-            onChange={(e) => setUpstreamId(e.target.value)}
+            onChange={(e) => {
+              setUpstreamId(e.target.value);
+              setToolsPage(1);
+            }}
           >
             <option value="">All MCPs</option>
             {(upstreamsQuery.data ?? []).map((u) => (
@@ -88,7 +98,7 @@ export function ToolsPage() {
                 </tr>
               </thead>
               <tbody>
-                {tools.map((tool) => (
+                {pagedTools.map((tool) => (
                   <tr key={tool.id}>
                     <td className="col-tool-name">
                       <code className="cell-tool-name">{tool.exposedName}</code>
@@ -124,6 +134,11 @@ export function ToolsPage() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            total={toolsTotal}
+            page={toolsPage}
+            onPageChange={setToolsPage}
+          />
         </section>
       ) : null}
     </div>

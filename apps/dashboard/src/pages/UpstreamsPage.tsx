@@ -12,6 +12,7 @@ import type {
   UpstreamVisibility,
 } from "../api/types";
 import { Modal } from "../components/Modal";
+import { Pagination, useClientPage } from "../components/Pagination";
 import { Toggle } from "../components/Toggle";
 import { UpstreamForm } from "../components/UpstreamForm";
 import { UpstreamGrantsPanel } from "../components/UpstreamGrantsPanel";
@@ -35,7 +36,7 @@ function visibilityBadge(visibility?: UpstreamVisibility) {
   if (visibility === "shared") {
     return <span className="badge badge-success">Shared</span>;
   }
-  return <span className="badge badge-muted">Personal</span>;
+  return <span className="badge badge-muted">Mine</span>;
 }
 
 function canManageUpstream(u: Upstream, me: AuthMeResponse): boolean {
@@ -80,6 +81,7 @@ export function UpstreamsPage() {
   const [oauthBusyId, setOauthBusyId] = useState<string | null>(null);
   const [visibilityFilter, setVisibilityFilter] =
     useState<VisibilityFilter>("all");
+  const [shareBusyId, setShareBusyId] = useState<string | null>(null);
 
   const meQuery = useQuery({
     queryKey: ["auth", "me"],
@@ -97,6 +99,13 @@ export function UpstreamsPage() {
     if (visibilityFilter === "all") return rows;
     return rows.filter((u) => (u.visibility ?? "personal") === visibilityFilter);
   }, [query.data, visibilityFilter]);
+
+  const {
+    page: mcpPage,
+    setPage: setMcpPage,
+    pageItems: pagedUpstreams,
+    total: mcpTotal,
+  } = useClientPage(filteredUpstreams);
 
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: ["upstreams"] });
@@ -258,6 +267,35 @@ export function UpstreamsPage() {
     setModal("create");
   }
 
+  async function openShare(u: Upstream) {
+    if (!me?.capabilities.canManageSharedMcps) return;
+    setShareBusyId(u.id);
+    setOauthAlert(null);
+    try {
+      let target = u;
+      if ((u.visibility ?? "personal") === "personal") {
+        const promoted = await upstreamsApi.promote(u.id);
+        target = {
+          ...u,
+          visibility: promoted.visibility ?? "shared",
+          ownerUserId: promoted.ownerUserId ?? null,
+        };
+        invalidate();
+      }
+      setGrantsFor(target);
+    } catch (err) {
+      setOauthAlert({
+        type: "error",
+        message:
+          err instanceof ApiError
+            ? err.message
+            : "Failed to open share panel.",
+      });
+    } finally {
+      setShareBusyId(null);
+    }
+  }
+
   function openEdit(upstream: Upstream) {
     setFormError(null);
     setModal(upstream);
@@ -348,6 +386,7 @@ export function UpstreamsPage() {
       ) : null}
 
       {filteredUpstreams.length > 0 ? (
+        <>
         <div className="table-wrap">
           <table className="data-table mcp-table">
             <thead>
@@ -362,7 +401,7 @@ export function UpstreamsPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredUpstreams.map((u) => {
+              {pagedUpstreams.map((u) => {
                 const manageable = me ? canManageUpstream(u, me) : false;
                 return (
                 <tr key={u.id}>
@@ -445,14 +484,14 @@ export function UpstreamsPage() {
                       </button>
                       {manageable ? (
                         <>
-                          {(u.visibility ?? "personal") === "shared" &&
-                          me?.capabilities.canManageSharedMcps ? (
+                          {me?.capabilities.canManageSharedMcps ? (
                             <button
                               type="button"
                               className="btn btn-ghost btn-sm"
-                              onClick={() => setGrantsFor(u)}
+                              disabled={shareBusyId === u.id}
+                              onClick={() => void openShare(u)}
                             >
-                              Share
+                              {shareBusyId === u.id ? "Sharing…" : "Share"}
                             </button>
                           ) : null}
                           <button
@@ -489,6 +528,12 @@ export function UpstreamsPage() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          total={mcpTotal}
+          page={mcpPage}
+          onPageChange={setMcpPage}
+        />
+        </>
       ) : null}
 
       {modal === "create" ? (
@@ -496,7 +541,6 @@ export function UpstreamsPage() {
           <UpstreamForm
             error={formError}
             submitting={createMutation.isPending}
-            canChooseVisibility={me?.capabilities.canManageSharedMcps}
             onCancel={() => setModal(null)}
             onSubmit={(body) => createMutation.mutate(body as CreateUpstream)}
           />
@@ -533,6 +577,10 @@ export function UpstreamsPage() {
           <UpstreamGrantsPanel
             upstream={grantsFor}
             onClose={() => setGrantsFor(null)}
+            onUnshared={() => {
+              setGrantsFor(null);
+              invalidate();
+            }}
           />
         </Modal>
       ) : null}
