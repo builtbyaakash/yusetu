@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import path from "node:path";
 import * as schema from "./schema.js";
+import { migrateGrantsV1 } from "./migrate-grants.js";
 import { migrateTeamsV1 } from "./migrate-teams.js";
 
 export type Db = BetterSQLite3Database<typeof schema>;
@@ -110,6 +111,13 @@ CREATE TABLE IF NOT EXISTS user_upstream_oauth (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS upstream_grants (
+  id TEXT PRIMARY KEY NOT NULL,
+  upstream_id TEXT NOT NULL REFERENCES upstreams(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS tools (
   id TEXT PRIMARY KEY NOT NULL,
   upstream_id TEXT NOT NULL REFERENCES upstreams(id) ON DELETE CASCADE,
@@ -205,6 +213,10 @@ CREATE INDEX IF NOT EXISTS idx_user_upstream_secrets_user_upstream
   ON user_upstream_secrets(user_id, upstream_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_upstream_oauth_user_upstream
   ON user_upstream_oauth(user_id, upstream_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_upstream_grants_upstream_user
+  ON upstream_grants(upstream_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_upstream_grants_user_id
+  ON upstream_grants(user_id);
 `;
 
 /** Light migrations for existing DBs created before schema additions. */
@@ -272,6 +284,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_events_mcp_slug ON usage_events(mcp_slug);
 `);
 
   migrateTeamsV1(sqlite, dataDir);
+  migrateGrantsV1(sqlite);
 }
 
 export function openDb(dbPath: string): Db {

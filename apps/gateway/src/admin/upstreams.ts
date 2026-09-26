@@ -1,4 +1,4 @@
-import { and, count, eq, ne, or } from "drizzle-orm";
+import { and, count, eq, ne } from "drizzle-orm";
 import type { Context } from "hono";
 import {
   CreateUpstreamSchema,
@@ -39,6 +39,7 @@ import {
   ensureUpstreamOauthRow,
   getUpstreamOauthRow,
 } from "../upstreams/oauth-provider.js";
+import { canReadUpstreamRow } from "../upstreams/catalog.js";
 import type { UpstreamPool } from "../upstreams/pool.js";
 import { isElevatedRole, parseRole } from "../auth/context.js";
 import type { User } from "../db/schema.js";
@@ -107,8 +108,7 @@ function allocateSlug(
 }
 
 function canReadUpstream(row: Upstream, userId: string): boolean {
-  if (row.visibility === "shared") return true;
-  return row.ownerUserId === userId;
+  return canReadUpstreamRow(row, userId);
 }
 
 function mutateGuard(
@@ -422,13 +422,8 @@ export function createUpstreamHandlers(
       const rows = db
         .select()
         .from(upstreams)
-        .where(
-          or(
-            eq(upstreams.visibility, "shared"),
-            eq(upstreams.ownerUserId, user.id),
-          ),
-        )
-        .all();
+        .all()
+        .filter((row) => canReadUpstream(row, user.id));
       // Probe any enabled upstream still lacking a cached status (e.g. race
       // before warmAll finishes, or after invalidate).
       await Promise.all(

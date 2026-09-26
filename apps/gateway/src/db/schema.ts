@@ -152,6 +152,21 @@ export const userUpstreamOauth = sqliteTable("user_upstream_oauth", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/**
+ * Allowlist for shared upstream visibility.
+ * Empty after migrate (fail-closed). Personal upstreams never use this table.
+ */
+export const upstreamGrants = sqliteTable("upstream_grants", {
+  id: text("id").primaryKey(),
+  upstreamId: text("upstream_id")
+    .notNull()
+    .references(() => upstreams.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const tools = sqliteTable("tools", {
   id: text("id").primaryKey(),
   upstreamId: text("upstream_id")
@@ -259,6 +274,7 @@ export type UpstreamSecret = typeof upstreamSecrets.$inferSelect;
 export type UserUpstreamSecret = typeof userUpstreamSecrets.$inferSelect;
 export type UpstreamOauth = typeof upstreamOauth.$inferSelect;
 export type UserUpstreamOauth = typeof userUpstreamOauth.$inferSelect;
+export type UpstreamGrant = typeof upstreamGrants.$inferSelect;
 export type Tool = typeof tools.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type Setting = typeof settings.$inferSelect;

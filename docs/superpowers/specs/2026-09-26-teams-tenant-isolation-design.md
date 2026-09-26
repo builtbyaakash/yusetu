@@ -109,9 +109,18 @@ When `REQUIRE_MCP_AUTH` is true (default), middleware resolves `AuthContext` fro
 
 ### Catalog
 
-For caller `U`, the visible upstream set is every enabled shared upstream plus every enabled personal upstream where `owner_user_id = U`.
+For caller `U`, the visible enabled upstream set is:
 
-Build the MCP tool list and admin tool list from that set only. Rebuild or filter the runtime snapshot per caller. A process-wide unfiltered snapshot is not safe.
+- Every personal upstream where `owner_user_id = U`.
+- Every shared upstream that `U` may read under grants:
+  - Owner and admin bypass the grant table and see all shared upstreams.
+  - Members see a shared upstream only when an `upstream_grants` row pairs that upstream with `U`.
+
+Table `upstream_grants` stores `(upstream_id, user_id)` with a unique pair and `created_at`. Migration creates the empty table and does not auto-grant existing shared rows (fail-closed).
+
+Build the MCP tool list and admin tool list from that set only. Elevated callers may list all tools on `/api/tools`. Rebuild or filter the runtime snapshot per caller. A process-wide unfiltered snapshot is not safe.
+
+Shared OAuth status reads use the same grant predicate as admin upstream read. Shared OAuth start and disconnect stay elevated-only.
 
 ### Pool
 
@@ -182,6 +191,7 @@ Run on gateway boot (or a dedicated migrate step) using the existing SQLite alte
 4. Attach every existing API key to the owner.
 5. Move `mcp-sources/{slug}/` to `mcp-sources/{ownerUserId}/{slug}/` and update `upstreams.cwd`. The move is idempotent.
 6. Rebuild tool indexing after migrate. Drop global unique indexes that block multi-user tool names as part of the same wave.
+7. Create empty `upstream_grants` (`schema_grants_v1`). Do not insert grant rows for existing shared upstreams.
 
 New installs keep first-run `/setup`, then use the Team page for invites.
 
@@ -194,7 +204,8 @@ These are product gates, not only typecheck.
 - Member’s `/mcp` tools/list omits other users’ personal tools.
 - Two users calling the same shared git MCP use different pool keys and different checkout directories (observable via cwd and process list or gateway debug logs).
 - Invite signup creates a `member` who can add a personal MCP and create an API key scoped to that catalog.
-- Existing single-admin DB boots, migrates, and serves the previous shared upstreams for the owner.
+- Existing single-admin DB boots, migrates, and serves shared upstreams for the owner (elevated bypass). Members see shared only after an `upstream_grants` row.
+- Member `/api/tools` and catalog omit ungranted shared tools and other users' personal tools.
 
 ## File touch list (implementation guide)
 

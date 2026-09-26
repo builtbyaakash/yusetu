@@ -19,11 +19,12 @@ import {
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/index.js";
 import { upstreams, type Upstream } from "../db/schema.js";
+import { canReadUpstreamRow } from "./catalog.js";
 
 function oauthAccessGuard(c: Context, row: Upstream, mutate: boolean) {
   const user = getSessionUser(c);
   if (!user) return c.json({ error: "Unauthorized" }, 401);
-  if (row.visibility === "personal" && row.ownerUserId !== user.id) {
+  if (!canReadUpstreamRow(row, user.id)) {
     return c.json({ error: "Not found" }, 404);
   }
   if (mutate && row.visibility === "shared" && !isElevatedRole(parseRole(user.role))) {
