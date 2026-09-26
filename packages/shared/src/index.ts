@@ -19,6 +19,26 @@ export const LoginBodySchema = z.object({
 });
 export type LoginBody = z.infer<typeof LoginBodySchema>;
 
+export const JoinBodySchema = z.object({
+  token: z.string().min(1),
+  username: z.string().min(3).max(64),
+  password: z.string().min(8).max(128),
+});
+export type JoinBody = z.infer<typeof JoinBodySchema>;
+
+export const CreateInviteSchema = z.object({
+  role: z.enum(["admin", "member"]),
+});
+export type CreateInvite = z.infer<typeof CreateInviteSchema>;
+
+export const PatchMemberRoleSchema = z.object({
+  role: z.enum(["owner", "admin", "member"]),
+});
+export type PatchMemberRole = z.infer<typeof PatchMemberRoleSchema>;
+
+export const UpstreamVisibilitySchema = z.enum(["shared", "personal"]);
+export type UpstreamVisibility = z.infer<typeof UpstreamVisibilitySchema>;
+
 export const UpstreamAuthModeSchema = z.enum(["none", "oauth"]);
 export type UpstreamAuthMode = z.infer<typeof UpstreamAuthModeSchema>;
 
@@ -69,6 +89,8 @@ const CreateUpstreamObjectSchema = z.object({
   enabled: z.boolean().default(true),
   timeoutMs: z.number().int().positive().max(600_000).default(30_000),
   authMode: UpstreamAuthModeSchema.default("none"),
+  /** shared = team MCP; personal = private to ownerUserId. */
+  visibility: UpstreamVisibilitySchema.optional(),
   secrets: z.record(z.string(), z.string()).optional(),
 });
 

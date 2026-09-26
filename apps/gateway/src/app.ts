@@ -22,7 +22,16 @@ import { createUsageAnalyticsHandler } from "./admin/analytics.js";
 import { createHealthHandler } from "./admin/routes.js";
 import { createMcpHttpHandler } from "./mcp/http.js";
 import type { ToolRouter } from "./mcp/router.js";
-import { requireAdmin } from "./middleware/auth.js";
+import { requireElevated, requireSession } from "./middleware/auth.js";
+import {
+  createInvite,
+  handleJoin,
+  listInvites,
+  listMembers,
+  patchMemberRole,
+  removeMember,
+  revokeInvite,
+} from "./admin/team.js";
 import { createMcpAuthMiddleware } from "./middleware/mcp-auth.js";
 import { createOauthAuthorizeRoutes } from "./oauth/authorize.js";
 import { createOauthMetadataRoutes } from "./oauth/metadata.js";
@@ -65,26 +74,34 @@ export function createApp(
   app.post("/api/auth/setup", handleSetup);
   app.post("/api/auth/login", handleLogin);
   app.post("/api/auth/logout", handleLogout);
+  app.post("/api/auth/join", handleJoin);
   app.get("/api/auth/me", handleMe);
 
-  app.get("/api/upstreams", requireAdmin, (c) => upstreams.list(c));
-  app.get("/api/upstreams/:id", requireAdmin, (c) => upstreams.get(c));
-  app.post("/api/upstreams", requireAdmin, (c) => upstreams.create(c));
-  app.patch("/api/upstreams/:id", requireAdmin, (c) => upstreams.update(c));
-  app.delete("/api/upstreams/:id", requireAdmin, (c) => upstreams.remove(c));
-  app.delete("/api/upstreams/:id/secrets/:key", requireAdmin, (c) =>
+  app.post("/api/team/invites", requireElevated, createInvite);
+  app.get("/api/team/invites", requireElevated, listInvites);
+  app.delete("/api/team/invites/:id", requireElevated, revokeInvite);
+  app.get("/api/team/members", requireElevated, listMembers);
+  app.patch("/api/team/members/:userId", requireElevated, patchMemberRole);
+  app.delete("/api/team/members/:userId", requireElevated, removeMember);
+
+  app.get("/api/upstreams", requireSession, (c) => upstreams.list(c));
+  app.get("/api/upstreams/:id", requireSession, (c) => upstreams.get(c));
+  app.post("/api/upstreams", requireSession, (c) => upstreams.create(c));
+  app.patch("/api/upstreams/:id", requireSession, (c) => upstreams.update(c));
+  app.delete("/api/upstreams/:id", requireSession, (c) => upstreams.remove(c));
+  app.delete("/api/upstreams/:id/secrets/:key", requireSession, (c) =>
     upstreams.removeSecret(c),
   );
-  app.post("/api/upstreams/:id/discover", requireAdmin, (c) =>
+  app.post("/api/upstreams/:id/discover", requireSession, (c) =>
     upstreams.discover(c),
   );
-  app.post("/api/upstreams/:id/oauth/start", requireAdmin, (c) =>
+  app.post("/api/upstreams/:id/oauth/start", requireSession, (c) =>
     upstreamOauth.start(c),
   );
-  app.get("/api/upstreams/:id/oauth/status", requireAdmin, (c) =>
+  app.get("/api/upstreams/:id/oauth/status", requireSession, (c) =>
     upstreamOauth.status(c),
   );
-  app.post("/api/upstreams/:id/oauth/disconnect", requireAdmin, (c) =>
+  app.post("/api/upstreams/:id/oauth/disconnect", requireSession, (c) =>
     upstreamOauth.disconnect(c),
   );
 
@@ -94,18 +111,18 @@ export function createApp(
     createUpstreamOauthCallbackHandler(config, pool),
   );
 
-  app.get("/api/tools", requireAdmin, listTools);
-  app.patch("/api/tools/:id", requireAdmin, updateTool);
+  app.get("/api/tools", requireSession, listTools);
+  app.patch("/api/tools/:id", requireSession, updateTool);
 
-  app.post("/api/playground/call", requireAdmin, createPlaygroundHandler(router));
+  app.post("/api/playground/call", requireSession, createPlaygroundHandler(router));
 
-  app.get("/api/api-keys", requireAdmin, listApiKeys);
-  app.post("/api/api-keys", requireAdmin, createApiKey);
-  app.delete("/api/api-keys/:id", requireAdmin, deleteApiKey);
+  app.get("/api/api-keys", requireSession, listApiKeys);
+  app.post("/api/api-keys", requireSession, createApiKey);
+  app.delete("/api/api-keys/:id", requireSession, deleteApiKey);
 
   app.get(
     "/api/analytics/usage",
-    requireAdmin,
+    requireSession,
     createUsageAnalyticsHandler(config.toolPresentation),
   );
 

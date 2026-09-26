@@ -1,12 +1,18 @@
 import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
+import type { AuthContext } from "../auth/context.js";
+import { parseRole } from "../auth/context.js";
 import type { GatewayConfig } from "../config.js";
 import { getDb } from "../db/index.js";
-import { apiKeys, settings } from "../db/schema.js";
+import { apiKeys, settings, users } from "../db/schema.js";
 import { hashToken } from "../auth/crypto.js";
 import { getPublicOrigin } from "../oauth/metadata.js";
 import { findValidAccessToken } from "../oauth/store.js";
+
+export type McpAuthVariables = {
+  auth: AuthContext;
+};
 
 function mcpAuthRequired(config: GatewayConfig): boolean {
   if (config.requireMcpAuth) return true;
@@ -31,7 +37,18 @@ function unauthorized(c: Context, enableMcpOauth: boolean) {
   return c.json({ error: "Unauthorized" }, 401);
 }
 
-function validateApiKey(raw: string): boolean {
+function authContextForUserId(userId: string): AuthContext | null {
+  const db = getDb();
+  const user = db.select().from(users).where(eq(users.id, userId)).get();
+  if (!user) return null;
+  return {
+    userId: user.id,
+    username: user.username,
+    role: parseRole(user.role),
+  };
+}
+
+function resolveApiKey(raw: string): AuthContext | null {
   const db = getDb();
   const key = db
     .select()
@@ -39,63 +56,69 @@ function validateApiKey(raw: string): boolean {
     .where(and(eq(apiKeys.keyHash, hashToken(raw)), eq(apiKeys.enabled, true)))
     .get();
 
-  if (!key) return false;
+  if (!key?.userId) return null;
 
   db.update(apiKeys)
     .set({ lastUsedAt: new Date() })
     .where(eq(apiKeys.id, key.id))
     .run();
 
-  return true;
+  return authContextForUserId(key.userId);
 }
 
-function validateOauthAccessToken(
+function resolveOauthAccessToken(
   raw: string,
   enableMcpOauth: boolean,
-): boolean {
-  if (!enableMcpOauth) return false;
-  if (!raw.startsWith("ysat_")) return false;
-  return findValidAccessToken(raw) !== null;
+): AuthContext | null {
+  if (!enableMcpOauth) return null;
+  if (!raw.startsWith("ysat_")) return null;
+  const token = findValidAccessToken(raw);
+  if (!token) return null;
+  return authContextForUserId(token.userId);
 }
 
 export function createMcpAuthMiddleware(config: GatewayConfig) {
-  return createMiddleware(async (c, next) => {
-    if (!mcpAuthRequired(config)) {
-      await next();
-      return;
-    }
-
-    const xApiKey = c.req.header("x-api-key")?.trim();
-    const authHeader = c.req.header("authorization");
-    const bearer =
-      authHeader?.toLowerCase().startsWith("bearer ")
-        ? authHeader.slice(7).trim()
-        : null;
-
-    if (xApiKey) {
-      if (validateApiKey(xApiKey)) {
+  return createMiddleware<{ Variables: Partial<McpAuthVariables> }>(
+    async (c, next) => {
+      if (!mcpAuthRequired(config)) {
         await next();
         return;
       }
-      return unauthorized(c, config.enableMcpOauth);
-    }
 
-    if (!bearer) {
-      return unauthorized(c, config.enableMcpOauth);
-    }
+      const xApiKey = c.req.header("x-api-key")?.trim();
+      const authHeader = c.req.header("authorization");
+      const bearer =
+        authHeader?.toLowerCase().startsWith("bearer ")
+          ? authHeader.slice(7).trim()
+          : null;
 
-    // OAuth access tokens use ysat_ prefix
-    if (validateOauthAccessToken(bearer, config.enableMcpOauth)) {
+      let auth: AuthContext | null = null;
+
+      if (xApiKey) {
+        auth = resolveApiKey(xApiKey);
+        if (!auth) {
+          return unauthorized(c, config.enableMcpOauth);
+        }
+        c.set("auth", auth);
+        await next();
+        return;
+      }
+
+      if (!bearer) {
+        return unauthorized(c, config.enableMcpOauth);
+      }
+
+      auth = resolveOauthAccessToken(bearer, config.enableMcpOauth);
+      if (!auth) {
+        auth = resolveApiKey(bearer);
+      }
+
+      if (!auth) {
+        return unauthorized(c, config.enableMcpOauth);
+      }
+
+      c.set("auth", auth);
       await next();
-      return;
-    }
-
-    // API keys via Bearer (ysk_…) or legacy bearer tokens
-    if (validateApiKey(bearer)) {
-      await next();
-      return;
-    }
-
-    return unauthorized(c, config.enableMcpOauth);
-  });
+    },
+  );
 }

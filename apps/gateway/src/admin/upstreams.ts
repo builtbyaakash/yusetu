@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, ne, or } from "drizzle-orm";
 import type { Context } from "hono";
 import {
   CreateUpstreamSchema,
@@ -39,6 +39,94 @@ import {
   getUpstreamOauthRow,
 } from "../upstreams/oauth-provider.js";
 import type { UpstreamPool } from "../upstreams/pool.js";
+import { isElevatedRole, parseRole } from "../auth/context.js";
+import type { User } from "../db/schema.js";
+
+function sessionUser(c: Context): User {
+  return c.get("user") as User;
+}
+
+function sharedSlugExists(
+  db: ReturnType<typeof getDb>,
+  slug: string,
+  excludeId?: string,
+): boolean {
+  const conditions = [
+    eq(upstreams.slug, slug),
+    eq(upstreams.visibility, "shared"),
+  ];
+  if (excludeId) {
+    conditions.push(ne(upstreams.id, excludeId));
+  }
+  return !!db
+    .select()
+    .from(upstreams)
+    .where(and(...conditions))
+    .get();
+}
+
+function personalSlugExists(
+  db: ReturnType<typeof getDb>,
+  slug: string,
+  ownerUserId: string,
+  excludeId?: string,
+): boolean {
+  const conditions = [
+    eq(upstreams.slug, slug),
+    eq(upstreams.visibility, "personal"),
+    eq(upstreams.ownerUserId, ownerUserId),
+  ];
+  if (excludeId) {
+    conditions.push(ne(upstreams.id, excludeId));
+  }
+  return !!db
+    .select()
+    .from(upstreams)
+    .where(and(...conditions))
+    .get();
+}
+
+function allocateSlug(
+  db: ReturnType<typeof getDb>,
+  baseSlug: string,
+  visibility: "shared" | "personal",
+  ownerUserId: string | null,
+): string | null {
+  for (let n = 1; n <= 100; n++) {
+    const suffix = n === 1 ? "" : `-${n}`;
+    const slug = `${baseSlug.slice(0, 64 - suffix.length)}${suffix}`;
+    if (visibility === "shared") {
+      if (!sharedSlugExists(db, slug)) return slug;
+    } else if (ownerUserId) {
+      if (sharedSlugExists(db, slug)) continue;
+      if (!personalSlugExists(db, slug, ownerUserId)) return slug;
+    }
+  }
+  return null;
+}
+
+function canReadUpstream(row: Upstream, userId: string): boolean {
+  if (row.visibility === "shared") return true;
+  return row.ownerUserId === userId;
+}
+
+function mutateGuard(
+  c: Context,
+  row: Upstream,
+): Response | null {
+  const user = sessionUser(c);
+  const elevated = isElevatedRole(parseRole(user.role));
+  if (row.visibility === "shared") {
+    if (!elevated) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+    return null;
+  }
+  if (row.ownerUserId !== user.id) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  return null;
+}
 
 function emptyToNull(value: string | undefined | null): string | null {
   if (value === undefined || value === null) return null;
@@ -92,6 +180,8 @@ function serializeUpstream(
     isolationImage: row.isolationImage,
     enabled: row.enabled,
     timeoutMs: row.timeoutMs,
+    visibility: row.visibility,
+    ownerUserId: row.ownerUserId,
     authMode,
     oauthStatus:
       oauthRow?.status ?? (authMode === "oauth" ? "disconnected" : null),
@@ -241,8 +331,18 @@ export function createUpstreamHandlers(
 
   return {
     async list(c: Context) {
+      const user = sessionUser(c);
       const db = getDb();
-      const rows = db.select().from(upstreams).all();
+      const rows = db
+        .select()
+        .from(upstreams)
+        .where(
+          or(
+            eq(upstreams.visibility, "shared"),
+            eq(upstreams.ownerUserId, user.id),
+          ),
+        )
+        .all();
       // Probe any enabled upstream still lacking a cached status (e.g. race
       // before warmAll finishes, or after invalidate).
       await Promise.all(
@@ -278,6 +378,9 @@ export function createUpstreamHandlers(
       const db = getDb();
       const row = db.select().from(upstreams).where(eq(upstreams.id, id)).get();
       if (!row) return c.json({ error: "Not found" }, 404);
+      if (!canReadUpstream(row, sessionUser(c).id)) {
+        return c.json({ error: "Not found" }, 404);
+      }
       if (!row.enabled) {
         pool.setDisabled(id);
       } else if (pool.getStatus(id).status === "unknown") {
@@ -340,24 +443,20 @@ export function createUpstreamHandlers(
         );
       }
 
+      const user = sessionUser(c);
+      const elevated = isElevatedRole(parseRole(user.role));
+      const visibility = data.visibility ?? "personal";
+      if (!elevated && visibility === "shared") {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      const ownerUserId = visibility === "personal" ? user.id : null;
+
       const db = getDb();
       const baseSlug = slugifyUpstreamName(data.name);
-      let slug = baseSlug;
-      for (let n = 2; ; n++) {
-        const taken = db
-          .select()
-          .from(upstreams)
-          .where(eq(upstreams.slug, slug))
-          .get();
-        if (!taken) break;
-        if (n > 100) {
-          return c.json({ error: "could not allocate unique slug" }, 409);
-        }
-        const suffix = `-${n}`;
-        slug = `${baseSlug.slice(0, 64 - suffix.length)}${suffix}`;
+      const slug = allocateSlug(db, baseSlug, visibility, ownerUserId);
+      if (!slug) {
+        return c.json({ error: "could not allocate unique slug" }, 409);
       }
-
-      const user = c.get("user") as { id: string };
       const id = crypto.randomUUID();
       const now = new Date();
 
@@ -442,6 +541,8 @@ export function createUpstreamHandlers(
             enabled: data.enabled,
             timeoutMs: data.timeoutMs,
             authMode: data.authMode,
+            visibility,
+            ownerUserId,
             createdAt: now,
             createdByUserId: user.id,
           })
@@ -520,6 +621,8 @@ export function createUpstreamHandlers(
       const db = getDb();
       const row = db.select().from(upstreams).where(eq(upstreams.id, id)).get();
       if (!row) return c.json({ error: "Not found" }, 404);
+      const blocked = mutateGuard(c, row);
+      if (blocked) return blocked;
 
       const data = parsed.data;
       const nextTransport = data.transport ?? row.transport;
@@ -779,6 +882,8 @@ export function createUpstreamHandlers(
       const db = getDb();
       const row = db.select().from(upstreams).where(eq(upstreams.id, id)).get();
       if (!row) return c.json({ error: "Not found" }, 404);
+      const blocked = mutateGuard(c, row);
+      if (blocked) return blocked;
 
       const removed = deleteSecrets(id, [keyName]);
       if (removed === 0) {
@@ -810,6 +915,8 @@ export function createUpstreamHandlers(
       const db = getDb();
       const row = db.select().from(upstreams).where(eq(upstreams.id, id)).get();
       if (!row) return c.json({ error: "Not found" }, 404);
+      const blocked = mutateGuard(c, row);
+      if (blocked) return blocked;
 
       await pool.invalidate(id);
       db.delete(upstreams).where(eq(upstreams.id, id)).run();
@@ -827,6 +934,9 @@ export function createUpstreamHandlers(
       const db = getDb();
       const row = db.select().from(upstreams).where(eq(upstreams.id, id)).get();
       if (!row) return c.json({ error: "Not found" }, 404);
+      if (!canReadUpstream(row, sessionUser(c).id)) {
+        return c.json({ error: "Not found" }, 404);
+      }
 
       try {
         await discoverUpstreamTools(id, pool);

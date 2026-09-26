@@ -1,14 +1,24 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { CreateApiKeySchema } from "@yusetu/shared";
 import { generateApiKey } from "../auth/crypto.js";
 import { getDb } from "../db/index.js";
 import { apiKeys } from "../db/schema.js";
 import { getLogger } from "../logger.js";
+import type { User } from "../db/schema.js";
+
+function sessionUser(c: Context): User {
+  return c.get("user") as User;
+}
 
 export async function listApiKeys(c: Context) {
+  const user = sessionUser(c);
   const db = getDb();
-  const rows = db.select().from(apiKeys).all();
+  const rows = db
+    .select()
+    .from(apiKeys)
+    .where(eq(apiKeys.userId, user.id))
+    .all();
   return c.json(
     rows.map((r) => ({
       id: r.id,
@@ -30,6 +40,7 @@ export async function createApiKey(c: Context) {
     );
   }
 
+  const user = sessionUser(c);
   const { raw, prefix, hash } = generateApiKey();
   const id = crypto.randomUUID();
   const now = new Date();
@@ -41,12 +52,13 @@ export async function createApiKey(c: Context) {
       name: parsed.data.name,
       keyHash: hash,
       prefix,
+      userId: user.id,
       createdAt: now,
       enabled: true,
     })
     .run();
 
-  getLogger("control").info({ apiKeyId: id, prefix }, "api key created");
+  getLogger("control").info({ apiKeyId: id, prefix, userId: user.id }, "api key created");
 
   return c.json(
     {
@@ -63,8 +75,13 @@ export async function createApiKey(c: Context) {
 export async function deleteApiKey(c: Context) {
   const id = c.req.param("id");
   if (!id) return c.json({ error: "Missing id" }, 400);
+  const user = sessionUser(c);
   const db = getDb();
-  const row = db.select().from(apiKeys).where(eq(apiKeys.id, id)).get();
+  const row = db
+    .select()
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id)))
+    .get();
   if (!row) return c.json({ error: "Not found" }, 404);
   db.delete(apiKeys).where(eq(apiKeys.id, id)).run();
   return c.body(null, 204);
