@@ -1,13 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { upstreamsApi } from "../api";
+import { authApi, upstreamsApi } from "../api";
 import type {
+  AuthMeResponse,
   CreateUpstream,
   UpdateUpstream,
   Upstream,
   UpstreamOauthStatus,
+  UpstreamVisibility,
 } from "../api/types";
 import { Modal } from "../components/Modal";
 import { Toggle } from "../components/Toggle";
@@ -24,6 +26,22 @@ function statusBadge(status?: string) {
     default:
       return <span className="badge badge-warning">Unknown</span>;
   }
+}
+
+type VisibilityFilter = "all" | UpstreamVisibility;
+
+function visibilityBadge(visibility?: UpstreamVisibility) {
+  if (visibility === "shared") {
+    return <span className="badge badge-success">Shared</span>;
+  }
+  return <span className="badge badge-muted">Personal</span>;
+}
+
+function canManageUpstream(u: Upstream, me: AuthMeResponse): boolean {
+  if (u.visibility === "shared") {
+    return me.capabilities.canManageSharedMcps;
+  }
+  return u.ownerUserId == null || u.ownerUserId === me.id;
 }
 
 function oauthBadge(status?: UpstreamOauthStatus, error?: string | null) {
@@ -58,11 +76,25 @@ export function UpstreamsPage() {
   } | null>(null);
   const [discoveryAlert, setDiscoveryAlert] = useState<string | null>(null);
   const [oauthBusyId, setOauthBusyId] = useState<string | null>(null);
+  const [visibilityFilter, setVisibilityFilter] =
+    useState<VisibilityFilter>("all");
+
+  const meQuery = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: () => authApi.me(),
+  });
 
   const query = useQuery({
     queryKey: ["upstreams"],
     queryFn: () => upstreamsApi.list(),
   });
+
+  const me = meQuery.data;
+  const filteredUpstreams = useMemo(() => {
+    const rows = query.data ?? [];
+    if (visibilityFilter === "all") return rows;
+    return rows.filter((u) => (u.visibility ?? "personal") === visibilityFilter);
+  }, [query.data, visibilityFilter]);
 
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: ["upstreams"] });
@@ -267,6 +299,24 @@ export function UpstreamsPage() {
         <div className="alert alert-error">{discoveryAlert}</div>
       ) : null}
 
+      <div className="toolbar">
+        <div className="field field-filter">
+          <label htmlFor="mcp-visibility-filter">Show</label>
+          <select
+            id="mcp-visibility-filter"
+            className="select"
+            value={visibilityFilter}
+            onChange={(e) =>
+              setVisibilityFilter(e.target.value as VisibilityFilter)
+            }
+          >
+            <option value="all">All</option>
+            <option value="shared">Shared</option>
+            <option value="personal">Mine</option>
+          </select>
+        </div>
+      </div>
+
       {query.isLoading ? <div className="empty">Loading MCPs…</div> : null}
       {query.error ? (
         <div className="alert alert-error">
@@ -280,7 +330,13 @@ export function UpstreamsPage() {
         <div className="empty">No MCPs yet. Add your first MCP server.</div>
       ) : null}
 
-      {query.data && query.data.length > 0 ? (
+      {query.data &&
+      query.data.length > 0 &&
+      filteredUpstreams.length === 0 ? (
+        <div className="empty">No MCPs match this filter.</div>
+      ) : null}
+
+      {filteredUpstreams.length > 0 ? (
         <div className="table-wrap">
           <table className="data-table mcp-table">
             <thead>
@@ -295,9 +351,16 @@ export function UpstreamsPage() {
               </tr>
             </thead>
             <tbody>
-              {query.data.map((u) => (
+              {filteredUpstreams.map((u) => {
+                const manageable = me ? canManageUpstream(u, me) : false;
+                return (
                 <tr key={u.id}>
-                  <td className="cell-name">{u.name}</td>
+                  <td className="cell-name">
+                    <div className="badge-group">
+                      {u.name}
+                      {visibilityBadge(u.visibility)}
+                    </div>
+                  </td>
                   <td>
                     <code className="cell-slug">{u.slug}</code>
                   </td>
@@ -354,7 +417,7 @@ export function UpstreamsPage() {
                     <Toggle
                       checked={u.enabled}
                       aria-label={`Enable ${u.name}`}
-                      disabled={toggleMutation.isPending}
+                      disabled={toggleMutation.isPending || !manageable}
                       onChange={(enabled) =>
                         toggleMutation.mutate({ id: u.id, enabled })
                       }
@@ -367,36 +430,41 @@ export function UpstreamsPage() {
                         className="btn btn-ghost btn-sm"
                         onClick={() => openEdit(u)}
                       >
-                        Edit
+                        {manageable ? "Edit" : "View"}
                       </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        disabled={discoverMutation.isPending}
-                        onClick={() => discoverMutation.mutate(u.id)}
-                      >
-                        Rediscover
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-danger btn-sm"
-                        disabled={deleteMutation.isPending}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Delete MCP “${u.name}”? This cannot be undone.`,
-                            )
-                          ) {
-                            deleteMutation.mutate(u.id);
-                          }
-                        }}
-                      >
-                        Delete
-                      </button>
+                      {manageable ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={discoverMutation.isPending}
+                            onClick={() => discoverMutation.mutate(u.id)}
+                          >
+                            Rediscover
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            disabled={deleteMutation.isPending}
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Delete MCP “${u.name}”? This cannot be undone.`,
+                                )
+                              ) {
+                                deleteMutation.mutate(u.id);
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>
@@ -407,6 +475,7 @@ export function UpstreamsPage() {
           <UpstreamForm
             error={formError}
             submitting={createMutation.isPending}
+            canChooseVisibility={me?.capabilities.canManageSharedMcps}
             onCancel={() => setModal(null)}
             onSubmit={(body) => createMutation.mutate(body as CreateUpstream)}
           />
@@ -414,11 +483,19 @@ export function UpstreamsPage() {
       ) : null}
 
       {modal && modal !== "create" ? (
-        <Modal title={`Edit ${modal.name}`} onClose={() => setModal(null)}>
+        <Modal
+          title={
+            me && canManageUpstream(modal, me)
+              ? `Edit ${modal.name}`
+              : modal.name
+          }
+          onClose={() => setModal(null)}
+        >
           <UpstreamForm
             initial={modal}
             error={formError}
             submitting={updateMutation.isPending}
+            readOnly={Boolean(me && !canManageUpstream(modal, me))}
             onCancel={() => setModal(null)}
             onSubmit={(body) =>
               updateMutation.mutate({ id: modal.id, body })

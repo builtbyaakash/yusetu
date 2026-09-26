@@ -1,21 +1,31 @@
 import type {
   AuthMeResponse,
   CreateApiKey,
+  CreateInvite,
   CreateUpstream as SharedCreateUpstream,
   HealthResponse,
+  JoinBody,
+  PatchMemberRole,
   PlaygroundCall,
+  Role,
   UpdateTool,
   UpdateUpstream as SharedUpdateUpstream,
   UpstreamTransport,
+  UpstreamVisibility,
 } from "@yusetu/shared";
 
 export type {
   AuthMeResponse,
   CreateApiKey,
+  CreateInvite,
   HealthResponse,
+  JoinBody,
+  PatchMemberRole,
   PlaygroundCall,
+  Role,
   UpdateTool,
   UpstreamTransport,
+  UpstreamVisibility,
 };
 
 export type UpstreamAuthMode = "none" | "oauth";
@@ -78,6 +88,8 @@ export type Upstream = {
   authMode?: UpstreamAuthMode;
   oauthStatus?: UpstreamOauthStatus;
   oauthError?: string | null;
+  visibility?: UpstreamVisibility;
+  ownerUserId?: string | null;
   createdAt?: string;
   updatedAt?: string;
   /** Present on create/update when auto-discover ran successfully. */
@@ -159,4 +171,34 @@ export type UsageAnalytics = {
 export type ApiErrorBody = {
   error?: string;
   message?: string;
+};
+
+export type TeamInvite = {
+  id: string;
+  role: "admin" | "member";
+  createdByUserId: string;
+  expiresAt: string;
+  usedAt: string | null;
+  usedByUserId: string | null;
+  createdAt: string;
+};
+
+export type CreateInviteResponse = {
+  invite: TeamInvite;
+  token: string;
+  joinPath: string;
+};
+
+export type TeamMember = {
+  id: string;
+  username: string;
+  role: Role;
+  createdAt: string;
+  lastLoginAt: string | null;
+};
+
+export type JoinResponse = {
+  id: string;
+  username: string;
+  role: Role;
 };

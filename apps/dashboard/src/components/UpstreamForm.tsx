@@ -8,6 +8,7 @@ import type {
   UpstreamIsolation,
   UpstreamIsolationNetwork,
   UpstreamTransport,
+  UpstreamVisibility,
 } from "../api/types";
 import { SecretFields, secretsToRecord, secretsToRemove, type SecretPair } from "./SecretFields";
 
@@ -15,6 +16,9 @@ type UpstreamFormProps = {
   initial?: Upstream;
   submitting?: boolean;
   error?: string | null;
+  /** Owner/admin can pick shared vs personal on create. */
+  canChooseVisibility?: boolean;
+  readOnly?: boolean;
   onSubmit: (body: CreateUpstream | UpdateUpstream) => void;
   onCancel: () => void;
 };
@@ -43,10 +47,15 @@ export function UpstreamForm({
   initial,
   submitting,
   error,
+  canChooseVisibility = false,
+  readOnly = false,
   onSubmit,
   onCancel,
 }: UpstreamFormProps) {
   const isEdit = Boolean(initial);
+  const [visibility, setVisibility] = useState<UpstreamVisibility>(
+    initial?.visibility ?? "personal",
+  );
   const [name, setName] = useState(initial?.name ?? "");
   const [sourceMode, setSourceMode] = useState<SourceMode>(() =>
     initialSourceMode(initial),
@@ -108,6 +117,7 @@ export function UpstreamForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (readOnly) return;
     const secretsRecord = !useOauth ? secretsToRecord(secrets) : undefined;
     const removeSecrets =
       isEdit && !useOauth
@@ -123,9 +133,13 @@ export function UpstreamForm({
       ...(needsUrl ? { authMode } : {}),
     };
 
+    const visibilityField =
+      !isEdit && canChooseVisibility ? { visibility } : {};
+
     if (needsUrl) {
       onSubmit({
         ...base,
+        ...visibilityField,
         url: url.trim(),
         command: undefined,
         argsJson: undefined,
@@ -137,6 +151,7 @@ export function UpstreamForm({
     if (isGithub) {
       onSubmit({
         ...base,
+        ...visibilityField,
         transport: "stdio",
         gitUrl: gitUrl.trim(),
         gitRef: gitRef.trim() || "main",
@@ -154,6 +169,7 @@ export function UpstreamForm({
 
     onSubmit({
       ...base,
+      ...visibilityField,
       command: command.trim(),
       argsJson: parseArgs(argsText),
       cwd: cwd.trim() || undefined,
@@ -165,7 +181,34 @@ export function UpstreamForm({
   return (
     <form className="form" onSubmit={handleSubmit}>
       {error ? <div className="alert alert-error">{error}</div> : null}
+      {readOnly ? (
+        <div className="alert alert-info">
+          Shared team MCP — definition is read-only. Connect OAuth or use
+          credentials when your admin enables overlays.
+        </div>
+      ) : null}
 
+      {!isEdit && canChooseVisibility ? (
+        <div className="field">
+          <label htmlFor="upstream-visibility">Visibility</label>
+          <select
+            id="upstream-visibility"
+            className="select"
+            value={visibility}
+            onChange={(e) =>
+              setVisibility(e.target.value as UpstreamVisibility)
+            }
+          >
+            <option value="personal">Personal — only you</option>
+            <option value="shared">Shared — whole team</option>
+          </select>
+        </div>
+      ) : null}
+
+      <fieldset
+        disabled={readOnly}
+        style={{ border: "none", padding: 0, margin: 0 }}
+      >
       <div className="field">
         <label htmlFor="upstream-name">Name</label>
         <input
@@ -510,17 +553,21 @@ export function UpstreamForm({
         </>
       )}
 
+      </fieldset>
+
       <div className="row-actions" style={{ marginTop: "0.5rem" }}>
-        <button type="submit" className="btn btn-primary" disabled={submitting}>
-          {submitting ? "Saving…" : isEdit ? "Save changes" : "Create MCP"}
-        </button>
+        {!readOnly ? (
+          <button type="submit" className="btn btn-primary" disabled={submitting}>
+            {submitting ? "Saving…" : isEdit ? "Save changes" : "Create MCP"}
+          </button>
+        ) : null}
         <button
           type="button"
           className="btn btn-ghost"
           onClick={onCancel}
           disabled={submitting}
         >
-          Cancel
+          {readOnly ? "Close" : "Cancel"}
         </button>
       </div>
     </form>

@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 import type { AuthMeResponse } from "../api/types";
 import { UserAvatar } from "./UserAvatar";
 
-const links = [
+const baseLinks = [
   { to: "/mcps", label: "MCPs" },
   { to: "/tools", label: "Tools" },
   { to: "/playground", label: "Playground" },
@@ -18,6 +18,16 @@ type LayoutProps = {
 };
 
 export function Layout({ user, onLogout, loggingOut, children }: LayoutProps) {
+  const showTeam =
+    user.capabilities.canInvite || user.capabilities.canManageUsers;
+  const links = showTeam
+    ? [
+        ...baseLinks.slice(0, 4),
+        { to: "/team" as const, label: "Team" },
+        ...baseLinks.slice(4),
+      ]
+    : [...baseLinks];
+
   return (
     <div className="app-shell">
       <aside className="sidebar">

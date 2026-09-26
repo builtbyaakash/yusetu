@@ -24,6 +24,8 @@ import { PlaygroundPage } from "./pages/PlaygroundPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 import { ToolsPage } from "./pages/ToolsPage";
+import { JoinPage } from "./pages/JoinPage";
+import { TeamPage } from "./pages/TeamPage";
 import { UpstreamsPage } from "./pages/UpstreamsPage";
 
 const queryClient = new QueryClient({
@@ -36,7 +38,7 @@ const queryClient = new QueryClient({
 });
 
 function isAuthPublicPath(pathname: string): boolean {
-  return pathname === "/login" || pathname === "/setup";
+  return pathname === "/login" || pathname === "/setup" || pathname === "/join";
 }
 
 function BootGate() {
@@ -195,6 +197,16 @@ function AppRoutes({
         }
       />
       <Route
+        path="/join"
+        element={
+          <JoinPage
+            setupRequired={setupRequired}
+            authenticated={authenticated}
+            onSuccess={onAuthSuccess}
+          />
+        }
+      />
+      <Route
         element={
           user ? (
             <Layout user={user} loggingOut={loggingOut} onLogout={onLogout}>
@@ -211,6 +223,7 @@ function AppRoutes({
         <Route path="/tools" element={<ToolsPage />} />
         <Route path="/playground" element={<PlaygroundPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/team" element={<TeamPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/mcps" replace />} />
       </Route>

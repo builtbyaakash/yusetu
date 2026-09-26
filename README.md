@@ -243,10 +243,21 @@ pnpm dev
 - Dashboard: [http://127.0.0.1:5173](http://127.0.0.1:5173)
 - Gateway + MCP: [http://127.0.0.1:8080](http://127.0.0.1:8080)
 
-First launch with an empty database opens **signup** (`/setup`) — there is no default admin. Then:
+First launch with an empty database opens **signup** (`/setup`) — there is no default admin. That user becomes the **owner** of a single team on this instance.
 
-1. Add an MCP (hosted / stdio / Git)
-2. Create an API key in Settings
+**Adding teammates (invite links)**
+
+1. Sign in as owner or admin and open **Team** in the dashboard.
+2. Create an invite (member or admin role) and copy the join URL.
+3. Send the link to your teammate — each invite is single-use and expires in seven days.
+4. They open `/join?token=…`, pick a username and password, and land signed in.
+
+Open registration is disabled; new accounts require a valid invite after setup.
+
+Then for each user:
+
+1. Add MCPs (shared team MCPs for admins; personal MCPs for anyone)
+2. Create an API key in **Settings** (keys are per user and only expose that user’s catalog)
 3. Connect Cursor or Claude with the configs above
 
 Production-style:
@@ -307,9 +318,8 @@ That promise is about **this open-source project**. It does not imply a future h
 Planned — **not** available yet:
 
 1. **Tool groups** — group tools by use case (GitHub, databases, DevOps, …).
-2. **Team support** — share and manage MCP configs across a team (today: single-tenant admin).
-3. **Scoped API keys** — multiple keys already exist; planned: restrict a key to specific tools.
-4. **MCP health monitoring** — upstreams already show healthy/unhealthy; planned: alerts when an MCP goes down.
+2. **Scoped API keys** — multiple keys already exist; planned: restrict a key to specific tools.
+3. **MCP health monitoring** — upstreams already show healthy/unhealthy; planned: alerts when an MCP goes down.
 
 ---
 

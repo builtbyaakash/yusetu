@@ -4,10 +4,17 @@ import type {
   AuthMeResponse,
   CreateApiKey,
   CreateApiKeyResponse,
+  CreateInvite,
+  CreateInviteResponse,
   CreateUpstream,
   HealthResponse,
+  JoinBody,
+  JoinResponse,
+  PatchMemberRole,
   PlaygroundCall,
   PlaygroundCallResponse,
+  TeamInvite,
+  TeamMember,
   Tool,
   UpdateTool,
   UpdateUpstream,
@@ -32,6 +39,34 @@ export const authApi = {
   logout: () =>
     apiFetch<void>("/api/auth/logout", {
       method: "POST",
+    }),
+  join: (body: JoinBody) =>
+    apiFetch<JoinResponse>("/api/auth/join", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+};
+
+export const teamApi = {
+  createInvite: (body: CreateInvite) =>
+    apiFetch<CreateInviteResponse>("/api/team/invites", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listInvites: () => apiFetch<TeamInvite[]>("/api/team/invites"),
+  revokeInvite: (id: string) =>
+    apiFetch<void>(`/api/team/invites/${id}`, {
+      method: "DELETE",
+    }),
+  listMembers: () => apiFetch<TeamMember[]>("/api/team/members"),
+  patchMemberRole: (userId: string, body: PatchMemberRole) =>
+    apiFetch<TeamMember>(`/api/team/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  removeMember: (userId: string) =>
+    apiFetch<void>(`/api/team/members/${userId}`, {
+      method: "DELETE",
     }),
 };
 
