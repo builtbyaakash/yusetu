@@ -8,7 +8,6 @@ import type {
   UpstreamIsolation,
   UpstreamIsolationNetwork,
   UpstreamTransport,
-  UpstreamVisibility,
 } from "../api/types";
 import { SecretFields, secretsToRecord, secretsToRemove, type SecretPair } from "./SecretFields";
 
@@ -16,8 +15,6 @@ type UpstreamFormProps = {
   initial?: Upstream;
   submitting?: boolean;
   error?: string | null;
-  /** Owner/admin can pick shared vs personal on create. */
-  canChooseVisibility?: boolean;
   readOnly?: boolean;
   onSubmit: (body: CreateUpstream | UpdateUpstream) => void;
   onCancel: () => void;
@@ -47,15 +44,11 @@ export function UpstreamForm({
   initial,
   submitting,
   error,
-  canChooseVisibility = false,
   readOnly = false,
   onSubmit,
   onCancel,
 }: UpstreamFormProps) {
   const isEdit = Boolean(initial);
-  const [visibility, setVisibility] = useState<UpstreamVisibility>(
-    initial?.visibility ?? "personal",
-  );
   const [name, setName] = useState(initial?.name ?? "");
   const [sourceMode, setSourceMode] = useState<SourceMode>(() =>
     initialSourceMode(initial),
@@ -133,13 +126,9 @@ export function UpstreamForm({
       ...(needsUrl ? { authMode } : {}),
     };
 
-    const visibilityField =
-      !isEdit && canChooseVisibility ? { visibility } : {};
-
     if (needsUrl) {
       onSubmit({
         ...base,
-        ...visibilityField,
         url: url.trim(),
         command: undefined,
         argsJson: undefined,
@@ -151,7 +140,6 @@ export function UpstreamForm({
     if (isGithub) {
       onSubmit({
         ...base,
-        ...visibilityField,
         transport: "stdio",
         gitUrl: gitUrl.trim(),
         gitRef: gitRef.trim() || "main",
@@ -169,7 +157,6 @@ export function UpstreamForm({
 
     onSubmit({
       ...base,
-      ...visibilityField,
       command: command.trim(),
       argsJson: parseArgs(argsText),
       cwd: cwd.trim() || undefined,
@@ -185,23 +172,6 @@ export function UpstreamForm({
         <div className="alert alert-info">
           Shared team MCP — definition is read-only. Connect OAuth or use
           credentials when your admin enables overlays.
-        </div>
-      ) : null}
-
-      {!isEdit && canChooseVisibility ? (
-        <div className="field">
-          <label htmlFor="upstream-visibility">Visibility</label>
-          <select
-            id="upstream-visibility"
-            className="select"
-            value={visibility}
-            onChange={(e) =>
-              setVisibility(e.target.value as UpstreamVisibility)
-            }
-          >
-            <option value="personal">Personal — only you</option>
-            <option value="shared">Shared — grant access per member</option>
-          </select>
         </div>
       ) : null}
 

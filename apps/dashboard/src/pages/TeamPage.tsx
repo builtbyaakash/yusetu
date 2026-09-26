@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { authApi, teamApi } from "../api";
 import type { CreateInviteResponse, Role, TeamInvite } from "../api/types";
+import { Pagination, useClientPage } from "../components/Pagination";
 
 function formatDate(value: string): string {
   try {
@@ -43,6 +44,27 @@ export function TeamPage() {
     queryFn: () => teamApi.listMembers(),
     enabled: Boolean(meQuery.data?.capabilities.canManageUsers),
   });
+
+  const invites = useMemo(
+    () => invitesQuery.data ?? [],
+    [invitesQuery.data],
+  );
+  const members = useMemo(
+    () => membersQuery.data ?? [],
+    [membersQuery.data],
+  );
+  const {
+    page: invitePage,
+    setPage: setInvitePage,
+    pageItems: pagedInvites,
+    total: inviteTotal,
+  } = useClientPage(invites);
+  const {
+    page: memberPage,
+    setPage: setMemberPage,
+    pageItems: pagedMembers,
+    total: memberTotal,
+  } = useClientPage(members);
 
   const createInviteMutation = useMutation({
     mutationFn: () => teamApi.createInvite({ role: inviteRole }),
@@ -182,7 +204,8 @@ export function TeamPage() {
           {invitesQuery.data && invitesQuery.data.length === 0 ? (
             <div className="empty">No invites yet.</div>
           ) : null}
-          {invitesQuery.data && invitesQuery.data.length > 0 ? (
+          {invites.length > 0 ? (
+            <>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -195,7 +218,7 @@ export function TeamPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {invitesQuery.data.map((invite) => {
+                  {pagedInvites.map((invite) => {
                     const status = inviteStatus(invite);
                     const canRevoke = status === "Pending";
                     return (
@@ -240,6 +263,12 @@ export function TeamPage() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              total={inviteTotal}
+              page={invitePage}
+              onPageChange={setInvitePage}
+            />
+            </>
           ) : null}
         </section>
       ) : null}
@@ -257,7 +286,8 @@ export function TeamPage() {
                 : "Failed to load members."}
             </div>
           ) : null}
-          {membersQuery.data && membersQuery.data.length > 0 ? (
+          {members.length > 0 ? (
+            <>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -269,7 +299,7 @@ export function TeamPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {membersQuery.data.map((member) => {
+                  {pagedMembers.map((member) => {
                     const isSelf = member.id === me?.id;
                     return (
                       <tr key={member.id}>
@@ -335,6 +365,12 @@ export function TeamPage() {
                 </tbody>
               </table>
             </div>
+            <Pagination
+              total={memberTotal}
+              page={memberPage}
+              onPageChange={setMemberPage}
+            />
+            </>
           ) : null}
         </section>
       ) : null}

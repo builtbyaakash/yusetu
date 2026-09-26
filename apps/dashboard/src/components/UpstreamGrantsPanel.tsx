@@ -7,9 +7,14 @@ import type { Upstream, UpstreamGrant } from "../api/types";
 type GrantsPanelProps = {
   upstream: Upstream;
   onClose: () => void;
+  onUnshared?: (upstream: Upstream) => void;
 };
 
-export function UpstreamGrantsPanel({ upstream, onClose }: GrantsPanelProps) {
+export function UpstreamGrantsPanel({
+  upstream,
+  onClose,
+  onUnshared,
+}: GrantsPanelProps) {
   const queryClient = useQueryClient();
   const [addUserId, setAddUserId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -17,6 +22,7 @@ export function UpstreamGrantsPanel({ upstream, onClose }: GrantsPanelProps) {
   const grantsQuery = useQuery({
     queryKey: ["upstreams", upstream.id, "grants"],
     queryFn: () => upstreamsApi.listGrants(upstream.id),
+    enabled: (upstream.visibility ?? "personal") === "shared",
   });
 
   const membersQuery = useQuery({
@@ -56,6 +62,21 @@ export function UpstreamGrantsPanel({ upstream, onClose }: GrantsPanelProps) {
     onError: (err) => {
       setFormError(
         err instanceof ApiError ? err.message : "Failed to revoke grant.",
+      );
+    },
+  });
+
+  const unshareMutation = useMutation({
+    mutationFn: () => upstreamsApi.unshare(upstream.id),
+    onSuccess: (updated) => {
+      setFormError(null);
+      invalidate();
+      onUnshared?.(updated);
+      onClose();
+    },
+    onError: (err) => {
+      setFormError(
+        err instanceof ApiError ? err.message : "Failed to stop sharing.",
       );
     },
   });
@@ -162,6 +183,25 @@ export function UpstreamGrantsPanel({ upstream, onClose }: GrantsPanelProps) {
           </button>
         </div>
       </form>
+
+      <div className="stack" style={{ marginTop: "1rem" }}>
+        <button
+          type="button"
+          className="btn btn-danger"
+          disabled={unshareMutation.isPending}
+          onClick={() => {
+            if (
+              window.confirm(
+                `Stop sharing “${upstream.name}”? It becomes Mine again and all member grants are removed.`,
+              )
+            ) {
+              unshareMutation.mutate();
+            }
+          }}
+        >
+          {unshareMutation.isPending ? "Stopping…" : "Stop sharing"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -141,8 +141,12 @@ async function main() {
   const upstream = sqlite
     .prepare(`SELECT visibility, owner_user_id, cwd FROM upstreams WHERE id = 'up-1'`)
     .get();
-  assert(upstream?.visibility === "shared", "upstream visibility shared");
-  assert(upstream?.owner_user_id == null, "shared owner_user_id null");
+  assert(upstream?.visibility === "personal", "zero-grant shared → personal");
+  assert(upstream?.owner_user_id === userId, "owner_user_id = created_by");
+  const pfFlag = sqlite
+    .prepare(`SELECT value FROM settings WHERE key = 'schema_personal_first_v1'`)
+    .get();
+  assert(pfFlag?.value === "1", "schema_personal_first_v1 flagged");
   const expectedCwd = path.join(legacyDir, "mcp-sources", userId, "demo");
   assert(
     upstream?.cwd === expectedCwd,

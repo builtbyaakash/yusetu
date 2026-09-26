@@ -611,6 +611,20 @@ tbody tr:hover td {
   margin-left: auto;
 }
 
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.pagination-meta {
+  font-size: 0.875rem;
+  color: var(--color-muted, #6b7280);
+}
+
 .status-cell {
   display: flex;
   flex-wrap: wrap;

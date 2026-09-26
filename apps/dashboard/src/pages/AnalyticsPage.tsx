@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { ApiError } from "../api/client";
 import { analyticsApi } from "../api";
 import type { UsageAnalytics } from "../api/types";
+import { Pagination, useClientPage } from "../components/Pagination";
 
 function formatTokens(n: number): string {
   return n.toLocaleString();
@@ -121,6 +123,21 @@ export function AnalyticsPage() {
     hasCatalog && data
       ? `Meta mode exposes ~5 gateway tools vs ${formatTokens(data.catalogToolCount)} catalog tools if connected directly.`
       : null;
+
+  const mcpRows = useMemo(
+    () =>
+      (data?.byMcp ?? []).filter(
+        (r) =>
+          r.calls > 0 || r.tokensViaYusetu > 0 || r.tokensIfDirect > 0,
+      ),
+    [data?.byMcp],
+  );
+  const {
+    page: mcpPage,
+    setPage: setMcpPage,
+    pageItems: pagedMcpRows,
+    total: mcpTotal,
+  } = useClientPage(mcpRows);
 
   return (
     <div className="analytics">
@@ -246,9 +263,7 @@ export function AnalyticsPage() {
             <McpUsageChart rows={data.byMcp} />
           </section>
 
-          {data.byMcp.some(
-            (r) => r.calls > 0 || r.tokensViaYusetu > 0 || r.tokensIfDirect > 0,
-          ) ? (
+          {mcpRows.length > 0 ? (
             <section className="page-section page-section--wide">
               <h2>Per MCP</h2>
               <div className="table-wrap">
@@ -263,14 +278,7 @@ export function AnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.byMcp
-                      .filter(
-                        (r) =>
-                          r.calls > 0 ||
-                          r.tokensViaYusetu > 0 ||
-                          r.tokensIfDirect > 0,
-                      )
-                      .map((row) => {
+                    {pagedMcpRows.map((row) => {
                         const saved = tokensSaved(row);
                         const pct = savingsPct(row);
                         return (
@@ -302,6 +310,11 @@ export function AnalyticsPage() {
                   </tbody>
                 </table>
               </div>
+              <Pagination
+                total={mcpTotal}
+                page={mcpPage}
+                onPageChange={setMcpPage}
+              />
             </section>
           ) : null}
         </>

@@ -125,6 +125,14 @@ export const upstreamsApi = {
     apiFetch<void>(`/api/upstreams/${id}/grants/${encodeURIComponent(userId)}`, {
       method: "DELETE",
     }),
+  promote: (id: string) =>
+    apiFetch<Upstream>(`/api/upstreams/${id}/promote`, {
+      method: "POST",
+    }),
+  unshare: (id: string) =>
+    apiFetch<Upstream>(`/api/upstreams/${id}/unshare`, {
+      method: "POST",
+    }),
 };
 
 export const toolsApi = {

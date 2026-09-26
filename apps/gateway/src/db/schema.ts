@@ -70,7 +70,7 @@ export const upstreams = sqliteTable("upstreams", {
   isolationImage: text("isolation_image"),
   visibility: text("visibility", { enum: ["shared", "personal"] })
     .notNull()
-    .default("shared"),
+    .default("personal"),
   /** Required for personal upstreams. Null for shared. */
   ownerUserId: text("owner_user_id").references(() => users.id, {
     onDelete: "cascade",
