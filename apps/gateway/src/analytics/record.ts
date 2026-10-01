@@ -5,6 +5,7 @@ import { getLogger } from "../logger.js";
 export type UsageEventKind =
   | "tools_list"
   | "list_tools"
+  | "list_mcps"
   | "search_tools"
   | "get_tool"
   | "tool_call";

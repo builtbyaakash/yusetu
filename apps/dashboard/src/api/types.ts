@@ -168,10 +168,24 @@ export type UsageAnalytics = {
   catalogTokensIfDirect?: number;
   catalogTokensSaved?: number;
   catalogSavingsPercent?: number | null;
+  catalogTokensDelta?: number;
   discoveryTokensVia?: number;
   discoveryTokensIfDirect?: number;
+  discoveryOverheadVia?: number;
   invokeTokensVia?: number;
   invokeTokensIfDirect?: number;
+  netTokensSaved?: number;
+  netSavingsPercent?: number | null;
+  toolsListCount?: number;
+  catalogFromLiveSnapshot?: boolean;
+  estimatorVersion?: string;
+  currentOpportunity?: {
+    via: number;
+    ifDirect: number;
+    saved: number;
+    catalogToolCount: number;
+  };
+  sharedOverhead?: { exposureVia: number };
   eventCount?: number;
   mcpCount: number;
   catalogToolCount: number;
@@ -181,8 +195,13 @@ export type UsageAnalytics = {
     calls: number;
     tokensViaYusetu: number;
     tokensIfDirect: number;
+    discoveryTokensVia?: number;
+    discoveryTokensIfDirect?: number;
+    invokeTokensVia?: number;
+    invokeTokensIfDirect?: number;
     catalogTokens: number;
     toolCount: number;
+    netSaved?: number;
   }>;
 };
 

@@ -230,7 +230,7 @@ export const settings = sqliteTable("settings", {
 
 /**
  * Firehose of MCP gateway usage for analytics.
- * kinds: tools_list | list_tools | search_tools | get_tool | tool_call
+ * kinds: tools_list | list_tools | list_mcps | search_tools | get_tool | tool_call
  */
 export const usageEvents = sqliteTable("usage_events", {
   id: text("id").primaryKey(),
@@ -239,6 +239,7 @@ export const usageEvents = sqliteTable("usage_events", {
     enum: [
       "tools_list",
       "list_tools",
+      "list_mcps",
       "search_tools",
       "get_tool",
       "tool_call",

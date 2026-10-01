@@ -201,5 +201,8 @@ export const apiKeysApi = {
 };
 
 export const analyticsApi = {
-  usage: () => apiFetch<UsageAnalytics>("/api/analytics/usage"),
+  usage: (range: "7d" | "30d" | "90d" | "all" = "30d") =>
+    apiFetch<UsageAnalytics>(
+      `/api/analytics/usage?range=${encodeURIComponent(range)}`,
+    ),
 };

@@ -1,5 +1,7 @@
 import type { SnapshotTool } from "../mcp/snapshot.js";
 
+export const ESTIMATOR_VERSION = "chars4-v1";
+
 /**
  * Internal token estimate from serialized text length.
  * (ceil(chars/4) — not exposed in public analytics JSON.)
@@ -28,17 +30,14 @@ export function estimateToolDescriptorTokens(
   });
 }
 
-function directToolDescription(tool: SnapshotTool): string {
-  return tool.description
-    ? `[${tool.slug}] ${tool.description}`
-    : `[${tool.slug}] ${tool.originalName}`;
-}
-
-/** Counterfactual: tokens if this tool were listed via a direct MCP connection. */
+/**
+ * Counterfactual: tokens if this tool were listed via a direct MCP connection.
+ * Uses original upstream name/description — not Yūsetu slug__ prefixes.
+ */
 export function estimateDirectToolTokens(tool: SnapshotTool): number {
   return estimateToolDescriptorTokens(
-    tool.exposedName,
-    directToolDescription(tool),
+    tool.originalName,
+    tool.description ?? tool.originalName,
     tool.inputSchema,
   );
 }

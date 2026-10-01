@@ -37,7 +37,10 @@ import {
   type ListToolsDetail,
 } from "./meta-tools.js";
 import { runtimeSnapshot, type SnapshotTool } from "./snapshot.js";
-import { compressToolSchema } from "./schema-compress.js";
+import {
+  compressToolSchema,
+  truncateDescription,
+} from "./schema-compress.js";
 import { searchTools } from "./tool-search.js";
 import type { UpstreamPool } from "../upstreams/pool.js";
 
@@ -90,20 +93,33 @@ function parseListToolsDetail(raw: unknown): ListToolsDetail {
 function shapeListedTool(
   t: SnapshotTool,
   detail: ListToolsDetail,
+  schemaCompression: boolean,
 ): Record<string, unknown> {
   if (detail === "names") return { tool: t.originalName };
+  const description = t.description
+    ? truncateDescription(t.description)
+    : undefined;
   if (detail === "summary") {
     return {
       tool: t.originalName,
-      description: t.description,
+      ...(description !== undefined ? { description } : {}),
       hasSchema: true,
     };
   }
+  const rawSchema = t.inputSchema ?? { type: "object", properties: {} };
+  const inputSchema =
+    schemaCompression ? compressToolSchema(rawSchema) : rawSchema;
   return {
     tool: t.originalName,
-    description: t.description,
-    inputSchema: t.inputSchema,
+    ...(description !== undefined ? { description } : {}),
+    inputSchema,
   };
+}
+
+function toolDescriptorHash(payload: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(payload), "utf8")
+    .digest("hex");
 }
 
 function toFlatListTool(t: SnapshotTool): Tool {
@@ -229,10 +245,16 @@ async function handleMetaCall(
         tiny: isTinyMcpCatalog(tools),
       };
     });
-    return jsonResult({
-      mcps,
-      hint: "For capability discovery prefer yusetu_search_tools { query }. Or pick one MCP → yusetu_list_tools → yusetu_get_tool → yusetu_call. Do not list tools for every MCP up front.",
+    const payload = { mcps };
+    recordUsageEvent({
+      kind: "list_mcps",
+      mcpSlug: null,
+      toolName: META_LIST_MCPS,
+      tokensViaGateway: estimateJsonTokens(payload),
+      tokensIfDirect: 0,
+      userId,
     });
+    return jsonResult(payload);
   }
 
   if (name === META_SEARCH_TOOLS) {
@@ -252,12 +274,18 @@ async function handleMetaCall(
         (t) => `${t.slug}\0${t.originalName}`,
       ),
     );
-    const tools = hits.filter((h) => allowed.has(`${h.mcp}\0${h.tool}`));
+    const tools = hits
+      .filter((h) => allowed.has(`${h.mcp}\0${h.tool}`))
+      .map((h) => ({
+        ...h,
+        description: h.description
+          ? truncateDescription(h.description)
+          : h.description,
+      }));
 
     const payload = {
       tools,
       k,
-      hint: "Use yusetu_get_tool { mcp, tool } for inputSchema, then yusetu_call. Prefer search over listing every MCP.",
     };
     recordUsageEvent({
       kind: "search_tools",
@@ -307,18 +335,20 @@ async function handleMetaCall(
         error: `No tools for mcp "${mcp}"${query ? ` matching "${query}"` : ""}. Check yusetu_list_mcps and Rediscover in the dashboard.`,
         mcp,
         hash,
+        hint: "Use yusetu_search_tools or Rediscover in the dashboard.",
       };
       recordListToolsUsage(mcp, errPayload, { userId });
       return jsonResult(errPayload, true);
     }
 
-    const tools = matched.map((t) => shapeListedTool(t, detail));
+    const tools = matched.map((t) =>
+      shapeListedTool(t, detail, schemaCompression),
+    );
     const payload = {
       mcp,
       hash,
       detail,
       tools,
-      hint: "Prefer yusetu_get_tool { mcp, tool } for inputSchema before yusetu_call. Use query to narrow; avoid detail=full unless needed.",
     };
     recordListToolsUsage(mcp, payload, { userId });
     return jsonResult(payload);
@@ -327,6 +357,8 @@ async function handleMetaCall(
   if (name === META_GET_TOOL) {
     const mcp = String(args.mcp ?? "").trim();
     const tool = String(args.tool ?? "").trim();
+    const ifNoneMatch = String(args.ifNoneMatch ?? "").trim();
+    const wantRaw = args.raw === true;
     if (!mcp || !tool) {
       return jsonResult({ error: "mcp and tool are required" }, true);
     }
@@ -338,6 +370,7 @@ async function handleMetaCall(
         error: `Tool "${tool}" not found on mcp "${mcp}". Use yusetu_list_tools to discover names.`,
         mcp,
         tool,
+        hint: "Use yusetu_search_tools or yusetu_list_tools to discover names.",
       };
       recordUsageEvent({
         kind: "get_tool",
@@ -349,26 +382,49 @@ async function handleMetaCall(
       });
       return jsonResult(errPayload, true);
     }
+    const useCompression = schemaCompression && !wantRaw;
     const inputSchema =
-      found.inputSchema && schemaCompression
+      found.inputSchema && useCompression
         ? compressToolSchema(found.inputSchema)
         : found.inputSchema;
+    const description = found.description
+      ? truncateDescription(found.description)
+      : found.description;
     const payload = {
       mcp,
       tool: found.originalName,
-      description: found.description,
+      description,
       inputSchema,
     };
+    const hash = toolDescriptorHash(payload);
+    if (ifNoneMatch && ifNoneMatch === hash) {
+      const unchangedPayload = {
+        mcp,
+        tool: found.originalName,
+        unchanged: true as const,
+        hash,
+      };
+      recordUsageEvent({
+        kind: "get_tool",
+        mcpSlug: mcp,
+        toolName: META_GET_TOOL,
+        tokensViaGateway: estimateJsonTokens(unchangedPayload),
+        tokensIfDirect: 0,
+        userId,
+      });
+      return jsonResult(unchangedPayload);
+    }
+    const body = { ...payload, hash };
     recordUsageEvent({
       kind: "get_tool",
       mcpSlug: mcp,
       toolName: META_GET_TOOL,
-      tokensViaGateway: estimateJsonTokens(payload),
+      tokensViaGateway: estimateJsonTokens(body),
       // Schema already in tools/list ifDirect; via still counts compressed fetch cost.
       tokensIfDirect: 0,
       userId,
     });
-    return jsonResult(payload);
+    return jsonResult(body);
   }
 
   if (name === META_CALL) {

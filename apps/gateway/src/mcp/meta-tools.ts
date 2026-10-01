@@ -18,8 +18,7 @@ export function metaToolDescriptors(): Tool[] {
   return [
     {
       name: META_LIST_MCPS,
-      description:
-        "List connected MCP servers (slugs). For \"I need X\" capability discovery, prefer yusetu_search_tools first. Otherwise pick one slug, then yusetu_list_tools. Flow: yusetu_search_tools (or yusetu_list_mcps → yusetu_list_tools) → yusetu_get_tool → yusetu_call. For documentation MCPs, prefer TOC / path / specific-page tools before broad search when those tools exist.",
+      description: "List connected MCP server slugs.",
       inputSchema: {
         type: "object",
         properties: {},
@@ -29,22 +28,13 @@ export function metaToolDescriptors(): Tool[] {
     {
       name: META_SEARCH_TOOLS,
       description:
-        "Search all enabled tools across MCPs by natural-language query (BM25). Prefer this when you need a capability (\"I need X\") and do not already know the MCP slug. Returns compact hits (mcp, tool, description, score) without inputSchema — then yusetu_get_tool → yusetu_call.",
+        "Search tools across MCPs by query. Preferred path: search → yusetu_get_tool → yusetu_call. Do not list every MCP up front. Avoid detail=full unless needed.",
       inputSchema: {
         type: "object",
         properties: {
-          query: {
-            type: "string",
-            description: "Search query over tool names and descriptions",
-          },
-          mcp: {
-            type: "string",
-            description: "Optional MCP slug to restrict search to one server",
-          },
-          k: {
-            type: "number",
-            description: "Max hits to return (default 3, max 10)",
-          },
+          query: { type: "string" },
+          mcp: { type: "string" },
+          k: { type: "number" },
         },
         required: ["query"],
         additionalProperties: false,
@@ -53,29 +43,17 @@ export function metaToolDescriptors(): Tool[] {
     {
       name: META_LIST_TOOLS,
       description:
-        "List tools for one MCP by slug. Prefer yusetu_search_tools when looking for a capability across MCPs. Prefer detail=summary (default) then yusetu_get_tool for the schema before yusetu_call. Use query to filter instead of listing everything. Pass ifNoneMatch with a prior hash to skip an unchanged catalog.",
+        "List tools for one MCP. Default detail=summary (no schemas). Pass ifNoneMatch to skip unchanged catalogs.",
       inputSchema: {
         type: "object",
         properties: {
-          mcp: {
-            type: "string",
-            description: "MCP slug, e.g. linear or github",
-          },
-          query: {
-            type: "string",
-            description: "Optional case-insensitive filter on tool name/description",
-          },
+          mcp: { type: "string" },
+          query: { type: "string" },
           detail: {
             type: "string",
             enum: ["names", "summary", "full"],
-            description:
-              "names = tool name only; summary (default) = name+description+hasSchema (no inputSchema); full = include inputSchema",
           },
-          ifNoneMatch: {
-            type: "string",
-            description:
-              "Optional catalog hash from a prior list_tools response; if unchanged, returns { unchanged: true } without tools",
-          },
+          ifNoneMatch: { type: "string" },
         },
         required: ["mcp"],
         additionalProperties: false,
@@ -84,18 +62,14 @@ export function metaToolDescriptors(): Tool[] {
     {
       name: META_GET_TOOL,
       description:
-        "Get the full descriptor (description + inputSchema) for one tool on an MCP. Prefer after yusetu_search_tools or yusetu_list_tools with detail=summary, before yusetu_call.",
+        "Get description + inputSchema for one tool. Prefer after search or list_tools summary.",
       inputSchema: {
         type: "object",
         properties: {
-          mcp: {
-            type: "string",
-            description: "MCP slug",
-          },
-          tool: {
-            type: "string",
-            description: "Tool name as listed by yusetu_list_tools (original name, not slug__prefixed)",
-          },
+          mcp: { type: "string" },
+          tool: { type: "string" },
+          ifNoneMatch: { type: "string" },
+          raw: { type: "boolean" },
         },
         required: ["mcp", "tool"],
         additionalProperties: false,
@@ -103,23 +77,14 @@ export function metaToolDescriptors(): Tool[] {
     },
     {
       name: META_CALL,
-      description:
-        "Call a tool on an MCP. Prefer yusetu_search_tools or yusetu_list_tools (summary) → yusetu_get_tool → yusetu_call. For documentation MCPs, prefer TOC / path / specific-page tools before broad search when available.",
+      description: "Call a tool on an MCP by slug and tool name.",
       inputSchema: {
         type: "object",
         properties: {
-          mcp: {
-            type: "string",
-            description: "MCP slug",
-          },
-          tool: {
-            type: "string",
-            description:
-              "Tool name as listed by yusetu_list_tools (original name, not slug__prefixed)",
-          },
+          mcp: { type: "string" },
+          tool: { type: "string" },
           arguments: {
             type: "object",
-            description: "Arguments object matching the tool input schema",
             additionalProperties: true,
           },
         },
