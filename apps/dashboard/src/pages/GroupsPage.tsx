@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { ApiError } from "../api/client";
 import { mcpGroupsApi, upstreamsApi } from "../api";
 import type { McpGroup } from "../api/types";
+import { ConfirmDialog, type ConfirmIntent } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
+import { EmptyState, TableSkeleton } from "../components/Skeleton";
 
 export function GroupsPage() {
   const queryClient = useQueryClient();
@@ -11,6 +13,7 @@ export function GroupsPage() {
   const [editing, setEditing] = useState<McpGroup | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [confirm, setConfirm] = useState<ConfirmIntent | null>(null);
 
   const groupsQuery = useQuery({
     queryKey: ["mcp-groups"],
@@ -66,6 +69,7 @@ export function GroupsPage() {
     mutationFn: (id: string) => mcpGroupsApi.remove(id),
     onSuccess: () => {
       setEditing(null);
+      setConfirm(null);
       invalidate();
     },
   });
@@ -144,9 +148,7 @@ export function GroupsPage() {
 
       <section className="page-section page-section--wide">
         <h2>Your groups</h2>
-        {groupsQuery.isLoading ? (
-          <div className="empty">Loading groups…</div>
-        ) : null}
+        {groupsQuery.isLoading ? <TableSkeleton rows={4} cols={4} /> : null}
         {groupsQuery.error ? (
           <div className="alert alert-error">
             {groupsQuery.error instanceof ApiError
@@ -155,7 +157,10 @@ export function GroupsPage() {
           </div>
         ) : null}
         {groupsQuery.data && groupsQuery.data.length === 0 ? (
-          <div className="empty">No groups yet.</div>
+          <EmptyState
+            title="No groups yet"
+            body="Create a group, attach MCPs, then mint a scoped API key for that group."
+          />
         ) : null}
         {groupsQuery.data && groupsQuery.data.length > 0 ? (
           <div className="table-wrap">
@@ -192,15 +197,15 @@ export function GroupsPage() {
                         type="button"
                         className="btn btn-danger btn-sm"
                         disabled={deleteMutation.isPending}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Delete group “${group.name}”? Keys that only used this group will expose an empty catalog until you attach another.`,
-                            )
-                          ) {
-                            deleteMutation.mutate(group.id);
-                          }
-                        }}
+                        onClick={() =>
+                          setConfirm({
+                            title: "Delete group",
+                            message: `Delete “${group.name}”? Keys that only used this group will expose an empty catalog until you attach another.`,
+                            confirmLabel: "Delete",
+                            danger: true,
+                            onConfirm: () => deleteMutation.mutate(group.id),
+                          })
+                        }
                       >
                         Delete
                       </button>
@@ -301,6 +306,12 @@ export function GroupsPage() {
           </form>
         </Modal>
       ) : null}
+
+      <ConfirmDialog
+        intent={confirm}
+        onDismiss={() => setConfirm(null)}
+        busy={deleteMutation.isPending}
+      />
     </div>
   );
 }

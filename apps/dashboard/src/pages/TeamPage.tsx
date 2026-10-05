@@ -4,6 +4,7 @@ import { Navigate } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { authApi, teamApi } from "../api";
 import type { CreateInviteResponse, Role, TeamInvite } from "../api/types";
+import { ConfirmDialog, type ConfirmIntent } from "../components/ConfirmDialog";
 import { Pagination, useClientPage } from "../components/Pagination";
 
 function formatDate(value: string): string {
@@ -27,6 +28,7 @@ export function TeamPage() {
     null,
   );
   const [copied, setCopied] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmIntent | null>(null);
 
   const meQuery = useQuery({
     queryKey: ["auth", "me"],
@@ -77,6 +79,7 @@ export function TeamPage() {
   const revokeMutation = useMutation({
     mutationFn: (id: string) => teamApi.revokeInvite(id),
     onSuccess: () => {
+      setConfirm(null);
       void queryClient.invalidateQueries({ queryKey: ["team", "invites"] });
     },
   });
@@ -93,6 +96,7 @@ export function TeamPage() {
   const removeMutation = useMutation({
     mutationFn: (userId: string) => teamApi.removeMember(userId),
     onSuccess: () => {
+      setConfirm(null);
       void queryClient.invalidateQueries({ queryKey: ["team", "members"] });
     },
   });
@@ -243,13 +247,16 @@ export function TeamPage() {
                               type="button"
                               className="btn btn-danger btn-sm"
                               disabled={revokeMutation.isPending}
-                              onClick={() => {
-                                if (
-                                  window.confirm("Revoke this invite link?")
-                                ) {
-                                  revokeMutation.mutate(invite.id);
-                                }
-                              }}
+                              onClick={() =>
+                                setConfirm({
+                                  title: "Revoke invite",
+                                  message: "Revoke this invite link?",
+                                  confirmLabel: "Revoke",
+                                  danger: true,
+                                  onConfirm: () =>
+                                    revokeMutation.mutate(invite.id),
+                                })
+                              }
                             >
                               Revoke
                             </button>
@@ -346,15 +353,16 @@ export function TeamPage() {
                             type="button"
                             className="btn btn-danger btn-sm"
                             disabled={isSelf || removeMutation.isPending}
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  `Remove “${member.username}” from this team?`,
-                                )
-                              ) {
-                                removeMutation.mutate(member.id);
-                              }
-                            }}
+                            onClick={() =>
+                              setConfirm({
+                                title: "Remove member",
+                                message: `Remove “${member.username}” from this team?`,
+                                confirmLabel: "Remove",
+                                danger: true,
+                                onConfirm: () =>
+                                  removeMutation.mutate(member.id),
+                              })
+                            }
                           >
                             Remove
                           </button>
@@ -374,6 +382,12 @@ export function TeamPage() {
           ) : null}
         </section>
       ) : null}
+
+      <ConfirmDialog
+        intent={confirm}
+        onDismiss={() => setConfirm(null)}
+        busy={revokeMutation.isPending || removeMutation.isPending}
+      />
     </div>
   );
 }

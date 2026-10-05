@@ -69,7 +69,7 @@ function McpUsageChart({ rows }: { rows: UsageAnalytics["byMcp"] }) {
               <span className="mcp-usage-saved">
                 Net {signedTokens(row.saved)}
                 <span className="mcp-usage-saved-pct">
-                  · {formatTokens(row.catalogTokens)} defs today
+                  · {formatTokens(row.catalogTokens)} tool defs
                 </span>
               </span>
             </header>
@@ -147,8 +147,7 @@ export function AnalyticsPage() {
         <div>
           <h1>Analytics</h1>
           <p>
-            Observed context tokens through Yūsetu vs connecting each MCP
-            separately.
+            Tokens you did not send, versus connecting every MCP directly.
           </p>
         </div>
         <div className="page-header-actions" role="group" aria-label="Range">
@@ -205,11 +204,6 @@ export function AnalyticsPage() {
 
       {data && hasUsage ? (
         <>
-          <p className="hint analytics-exposure-hint">
-            Observed estimate · {data.estimatorVersion ?? "chars4-v1"}
-            {catalogExposureHint ? ` · ${catalogExposureHint}` : null}
-          </p>
-
           {data.catalogFromLiveSnapshot ? (
             <div className="alert">
               No tools/list was stored in this range. Historical catalog savings
@@ -222,7 +216,7 @@ export function AnalyticsPage() {
             <div className="analytics-hero analytics-hero--savings">
               <div className="analytics-hero-top">
                 <p className="analytics-hero-label">
-                  Estimated context tokens avoided
+                  Tokens you didn&apos;t send
                 </p>
                 {data.netSavingsPercent != null ? (
                   <span className="analytics-savings-badge">
@@ -233,31 +227,30 @@ export function AnalyticsPage() {
               </div>
               <p className="analytics-hero-value">{signedTokens(net)}</p>
               <p className="analytics-hero-sub">
-                Catalog delta after discovery overhead ·{" "}
-                {formatTokens(data.toolsListCount ?? 0)} observed tools/list
-                {data.toolsListCount === 1 ? "" : "s"} · invokes ≈ equal either
-                way
+                Versus listing every MCP tool definition separately ·{" "}
+                {formatTokens(data.toolsListCount ?? 0)} tools/list
+                {data.toolsListCount === 1 ? "" : "s"} observed
               </p>
             </div>
 
             <div className="analytics-compare">
               <div className="analytics-compare-item">
                 <span className="analytics-compare-label">
-                  Definitions if direct
+                  If connected directly
                 </span>
                 <span className="analytics-compare-stat analytics-compare-stat--lg">
                   {formatTokens(data.catalogTokensIfDirect ?? 0)}
                 </span>
               </div>
               <div className="analytics-compare-item">
-                <span className="analytics-compare-label">Meta tools/list</span>
+                <span className="analytics-compare-label">Through Yūsetu</span>
                 <span className="analytics-compare-stat analytics-compare-stat--lg">
                   −{formatTokens(data.catalogTokensVia ?? 0)}
                 </span>
               </div>
               <div className="analytics-compare-item">
                 <span className="analytics-compare-label">
-                  Discovery overhead
+                  Discovery cost
                 </span>
                 <span className="analytics-compare-stat analytics-compare-stat--lg">
                   −{formatTokens(discoveryOverhead)}
@@ -273,6 +266,14 @@ export function AnalyticsPage() {
                 </span>
               </div>
             </div>
+
+            <details className="analytics-details">
+              <summary>Estimator details</summary>
+              <p className="hint">
+                Observed estimate · {data.estimatorVersion ?? "chars4-v1"}
+                {catalogExposureHint ? ` · ${catalogExposureHint}` : null}
+              </p>
+            </details>
 
             {data.currentOpportunity ? (
               <div className="analytics-compare" style={{ marginTop: "1rem" }}>
@@ -331,7 +332,7 @@ export function AnalyticsPage() {
                       <th className="col-num">Calls</th>
                       <th className="col-num">Discovery</th>
                       <th className="col-num">Invoke</th>
-                      <th className="col-num">Defs today</th>
+                      <th className="col-num">Tool defs</th>
                       <th className="col-num">Net</th>
                     </tr>
                   </thead>
