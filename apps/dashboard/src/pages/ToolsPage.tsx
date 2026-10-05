@@ -1,12 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { toolsApi, upstreamsApi } from "../api";
 import { Pagination, useClientPage } from "../components/Pagination";
+import { EmptyState, TableSkeleton } from "../components/Skeleton";
+import { useToast } from "../components/Toast";
 import { Toggle } from "../components/Toggle";
 
 export function ToolsPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [upstreamId, setUpstreamId] = useState("");
 
   const upstreamsQuery = useQuery({
@@ -22,8 +26,9 @@ export function ToolsPage() {
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       toolsApi.update(id, { enabled }),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["tools"] });
+      toast.push(vars.enabled ? "Tool enabled." : "Tool disabled.", "success");
     },
   });
 
@@ -69,7 +74,7 @@ export function ToolsPage() {
         </div>
       </div>
 
-      {toolsQuery.isLoading ? <div className="empty">Loading tools…</div> : null}
+      {toolsQuery.isLoading ? <TableSkeleton rows={6} cols={5} /> : null}
       {toolsQuery.error ? (
         <div className="alert alert-error">
           {toolsQuery.error instanceof ApiError
@@ -79,9 +84,15 @@ export function ToolsPage() {
       ) : null}
 
       {!toolsQuery.isLoading && tools.length === 0 ? (
-        <div className="empty">
-          No tools discovered yet. Add an MCP and run Rediscover.
-        </div>
+        <EmptyState
+          title="No tools yet"
+          body="Add an MCP on the MCPs page, then Rediscover to pull its tool catalog here."
+          action={
+            <Link className="btn btn-primary" to="/mcps">
+              Go to MCPs
+            </Link>
+          }
+        />
       ) : null}
 
       {tools.length > 0 ? (

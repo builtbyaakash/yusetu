@@ -11,8 +11,16 @@ import type {
   UpstreamOauthStatus,
   UpstreamVisibility,
 } from "../api/types";
+import {
+  ConfirmDialog,
+  type ConfirmIntent,
+} from "../components/ConfirmDialog";
+import { Drawer } from "../components/Drawer";
+import { Menu, type MenuItem } from "../components/Menu";
 import { Modal } from "../components/Modal";
 import { Pagination, useClientPage } from "../components/Pagination";
+import { EmptyState, TableSkeleton } from "../components/Skeleton";
+import { useToast } from "../components/Toast";
 import { Toggle } from "../components/Toggle";
 import { UpstreamForm } from "../components/UpstreamForm";
 import { UpstreamGrantsPanel } from "../components/UpstreamGrantsPanel";
@@ -54,10 +62,7 @@ function oauthBadge(status?: UpstreamOauthStatus, error?: string | null) {
       return <span className="badge badge-warning">OAuth pending</span>;
     case "error":
       return (
-        <span
-          className="badge badge-danger"
-          title={error ?? "OAuth error"}
-        >
+        <span className="badge badge-danger" title={error ?? "OAuth error"}>
           OAuth error
         </span>
       );
@@ -67,11 +72,27 @@ function oauthBadge(status?: UpstreamOauthStatus, error?: string | null) {
   }
 }
 
+type PageSurface =
+  | { kind: "none" }
+  | { kind: "create" }
+  | { kind: "edit"; upstream: Upstream }
+  | { kind: "detail"; upstream: Upstream }
+  | { kind: "share"; upstream: Upstream };
+
+type ManageAction = {
+  id: string;
+  label: string;
+  danger?: boolean;
+  disabled?: boolean;
+  run: () => void;
+};
+
 export function UpstreamsPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [modal, setModal] = useState<"create" | Upstream | null>(null);
-  const [grantsFor, setGrantsFor] = useState<Upstream | null>(null);
+  const [surface, setSurface] = useState<PageSurface>({ kind: "none" });
+  const [confirm, setConfirm] = useState<ConfirmIntent | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [oauthAlert, setOauthAlert] = useState<{
     type: "success" | "error";
@@ -110,6 +131,15 @@ export function UpstreamsPage() {
   const invalidate = () =>
     void queryClient.invalidateQueries({ queryKey: ["upstreams"] });
 
+  function liveUpstream(upstream: Upstream): Upstream {
+    return query.data?.find((row) => row.id === upstream.id) ?? upstream;
+  }
+
+  function closeSurface() {
+    setFormError(null);
+    setSurface({ kind: "none" });
+  }
+
   useEffect(() => {
     const oauth = searchParams.get("oauth");
     if (!oauth) return;
@@ -140,7 +170,6 @@ export function UpstreamsPage() {
     try {
       const { authorizationUrl } = await upstreamsApi.startOauth(id);
       window.open(authorizationUrl, "_blank", "noopener,noreferrer");
-      // Stay on Yusetu; poll until the other tab finishes OAuth.
       const started = Date.now();
       const poll = window.setInterval(() => {
         void (async () => {
@@ -163,7 +192,8 @@ export function UpstreamsPage() {
               setOauthBusyId(null);
               setOauthAlert({
                 type: "error",
-                message: "OAuth timed out. Finish login in the other tab, or try again.",
+                message:
+                  "OAuth timed out. Finish login in the other tab, or try again.",
               });
             }
           } catch {
@@ -207,7 +237,7 @@ export function UpstreamsPage() {
   const createMutation = useMutation({
     mutationFn: (body: CreateUpstream) => upstreamsApi.create(body),
     onSuccess: (created, variables) => {
-      setModal(null);
+      setSurface({ kind: "none" });
       setFormError(null);
       setDiscoveryAlert(
         created.discoveryError
@@ -216,13 +246,17 @@ export function UpstreamsPage() {
       );
       invalidate();
       void queryClient.invalidateQueries({ queryKey: ["tools"] });
+      toast.push(`Added ${created.name}.`, "success");
       if (variables.authMode === "oauth") {
-        const connect = window.confirm(
-          `MCP “${created.name}” created. Connect OAuth now?`,
-        );
-        if (connect) {
-          void startOauthFlow(created.id);
-        }
+        setConfirm({
+          title: "Connect OAuth",
+          message: `"${created.name}" is ready. Connect OAuth now?`,
+          confirmLabel: "Connect OAuth",
+          onConfirm: () => {
+            setConfirm(null);
+            void startOauthFlow(created.id);
+          },
+        });
       }
     },
     onError: (err) => {
@@ -233,10 +267,11 @@ export function UpstreamsPage() {
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: UpdateUpstream }) =>
       upstreamsApi.update(id, body),
-    onSuccess: () => {
-      setModal(null);
+    onSuccess: (updated) => {
+      setSurface({ kind: "none" });
       setFormError(null);
       invalidate();
+      toast.push(`Saved ${updated.name}.`, "success");
     },
     onError: (err) => {
       setFormError(err instanceof ApiError ? err.message : "Update failed.");
@@ -244,27 +279,93 @@ export function UpstreamsPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => upstreamsApi.remove(id),
-    onSuccess: invalidate,
+    mutationFn: ({ id }: { id: string; name: string }) => upstreamsApi.remove(id),
+    onSuccess: (_data, variables) => {
+      setSurface((current) =>
+        current.kind !== "none" &&
+        current.kind !== "create" &&
+        current.upstream.id === variables.id
+          ? { kind: "none" }
+          : current,
+      );
+      invalidate();
+      toast.push(`Deleted ${variables.name}.`, "success");
+    },
+    onError: (err) => {
+      toast.push(
+        err instanceof ApiError ? err.message : "Delete failed.",
+        "error",
+      );
+    },
   });
 
   const discoverMutation = useMutation({
-    mutationFn: (id: string) => upstreamsApi.discover(id),
-    onSuccess: () => {
+    mutationFn: ({ id }: { id: string; name: string }) =>
+      upstreamsApi.discover(id),
+    onSuccess: (updated, variables) => {
       invalidate();
       void queryClient.invalidateQueries({ queryKey: ["tools"] });
+      if (updated.discoveryError) {
+        toast.push(
+          `Rediscover failed for ${variables.name}. ${updated.discoveryError}`,
+          "error",
+        );
+        return;
+      }
+      const count = updated.discovered ?? updated.toolCount;
+      toast.push(
+        count != null
+          ? `Rediscovered ${count} tools for ${variables.name}.`
+          : `Rediscovered tools for ${variables.name}.`,
+        "success",
+      );
+    },
+    onError: (err) => {
+      toast.push(
+        err instanceof ApiError ? err.message : "Rediscover failed.",
+        "error",
+      );
     },
   });
 
   const toggleMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      upstreamsApi.update(id, { enabled }),
-    onSuccess: invalidate,
+    mutationFn: ({
+      id,
+      enabled,
+    }: {
+      id: string;
+      enabled: boolean;
+      name: string;
+    }) => upstreamsApi.update(id, { enabled }),
+    onSuccess: (_data, variables) => {
+      invalidate();
+      toast.push(
+        variables.enabled
+          ? `Enabled ${variables.name}.`
+          : `Disabled ${variables.name}.`,
+        "success",
+      );
+    },
+    onError: (err) => {
+      toast.push(
+        err instanceof ApiError ? err.message : "Update failed.",
+        "error",
+      );
+    },
   });
 
   function openCreate() {
     setFormError(null);
-    setModal("create");
+    setSurface({ kind: "create" });
+  }
+
+  function openEdit(upstream: Upstream) {
+    setFormError(null);
+    setSurface({ kind: "edit", upstream });
+  }
+
+  function openDetail(upstream: Upstream) {
+    setSurface({ kind: "detail", upstream });
   }
 
   async function openShare(u: Upstream) {
@@ -282,23 +383,42 @@ export function UpstreamsPage() {
         };
         invalidate();
       }
-      setGrantsFor(target);
+      setSurface({ kind: "share", upstream: target });
     } catch (err) {
       setOauthAlert({
         type: "error",
         message:
-          err instanceof ApiError
-            ? err.message
-            : "Failed to open share panel.",
+          err instanceof ApiError ? err.message : "Failed to open share panel.",
       });
     } finally {
       setShareBusyId(null);
     }
   }
 
-  function openEdit(upstream: Upstream) {
-    setFormError(null);
-    setModal(upstream);
+  function askDelete(u: Upstream) {
+    setConfirm({
+      title: "Delete MCP",
+      message: `Delete "${u.name}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: () => {
+        setConfirm(null);
+        deleteMutation.mutate({ id: u.id, name: u.name });
+      },
+    });
+  }
+
+  function askDisconnect(u: Upstream) {
+    setConfirm({
+      title: "Disconnect OAuth",
+      message: `Disconnect OAuth for "${u.name}"?`,
+      confirmLabel: "Disconnect",
+      danger: true,
+      onConfirm: () => {
+        setConfirm(null);
+        void disconnectOauth(u.id);
+      },
+    });
   }
 
   function isOauthConnected(u: Upstream) {
@@ -309,20 +429,56 @@ export function UpstreamsPage() {
     return u.authMode === "oauth" && u.oauthStatus !== "connected";
   }
 
+  function manageActions(u: Upstream): ManageAction[] {
+    if (!me || !canManageUpstream(u, me)) return [];
+    const actions: ManageAction[] = [
+      { id: "edit", label: "Edit", run: () => openEdit(u) },
+    ];
+    if (me.capabilities.canManageSharedMcps) {
+      actions.push({
+        id: "share",
+        label: shareBusyId === u.id ? "Sharing…" : "Share",
+        disabled: shareBusyId === u.id,
+        run: () => void openShare(u),
+      });
+    }
+    actions.push(
+      {
+        id: "rediscover",
+        label: "Rediscover",
+        disabled: discoverMutation.isPending,
+        run: () => discoverMutation.mutate({ id: u.id, name: u.name }),
+      },
+      {
+        id: "delete",
+        label: "Delete",
+        danger: true,
+        disabled: deleteMutation.isPending,
+        run: () => askDelete(u),
+      },
+    );
+    return actions;
+  }
+
   const filterOptions: { value: VisibilityFilter; label: string }[] = [
     { value: "all", label: "All" },
     { value: "shared", label: "Shared" },
     { value: "personal", label: "Mine" },
   ];
 
+  const detail =
+    surface.kind === "detail" ? liveUpstream(surface.upstream) : null;
+  const editing =
+    surface.kind === "edit" ? surface.upstream : null;
+  const sharing = surface.kind === "share" ? surface.upstream : null;
+  const detailActions = detail ? manageActions(detail) : [];
+
   return (
     <div className="mcp-list">
       <div className="page-header">
         <div>
           <h1>MCPs</h1>
-          <p>
-            Tools are discovered on add; Rediscover refreshes.
-          </p>
+          <p>Tools are discovered on add; Rediscover refreshes.</p>
         </div>
         <div className="actions">
           <button type="button" className="btn btn-primary" onClick={openCreate}>
@@ -366,7 +522,7 @@ export function UpstreamsPage() {
         </div>
       </div>
 
-      {query.isLoading ? <div className="empty">Loading MCPs…</div> : null}
+      {query.isLoading ? <TableSkeleton rows={6} cols={7} /> : null}
       {query.error ? (
         <div className="alert alert-error">
           {query.error instanceof ApiError
@@ -375,215 +531,288 @@ export function UpstreamsPage() {
         </div>
       ) : null}
 
-      {query.data && query.data.length === 0 ? (
-        <div className="empty">No MCPs yet. Add your first MCP server.</div>
+      {!query.isLoading && query.data && query.data.length === 0 ? (
+        <EmptyState
+          title="No MCPs yet"
+          body="Add a server and Yusetu will discover its tools."
+          action={
+            <button type="button" className="btn btn-primary" onClick={openCreate}>
+              Add MCP
+            </button>
+          }
+        />
       ) : null}
 
-      {query.data &&
+      {!query.isLoading &&
+      query.data &&
       query.data.length > 0 &&
       filteredUpstreams.length === 0 ? (
-        <div className="empty">No MCPs match this filter.</div>
+        <EmptyState
+          title="No MCPs in this view"
+          body="Nothing matches this filter."
+          action={
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setVisibilityFilter("all")}
+            >
+              Show all
+            </button>
+          }
+        />
       ) : null}
 
       {filteredUpstreams.length > 0 ? (
         <>
-        <div className="table-wrap">
-          <table className="data-table mcp-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Slug</th>
-                <th>Transport</th>
-                <th>Status</th>
-                <th className="col-num">Tools</th>
-                <th className="col-enabled">Enabled</th>
-                <th className="col-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagedUpstreams.map((u) => {
-                const manageable = me ? canManageUpstream(u, me) : false;
-                return (
-                <tr key={u.id}>
-                  <td className="cell-name">
-                    <div className="badge-group">
-                      {u.name}
-                      {visibilityBadge(u.visibility)}
-                    </div>
-                  </td>
-                  <td>
-                    <code className="cell-slug">{u.slug}</code>
-                  </td>
-                  <td>
-                    <div className="badge-group">
-                      <span className="badge badge-muted">{u.transport}</span>
-                      {u.gitUrl ? (
-                        <span className="badge badge-muted">git</span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td>
-                    <div className="status-cell">
-                      <div className="badge-group">
-                        {statusBadge(u.status)}
-                        {u.authMode === "oauth"
-                          ? oauthBadge(u.oauthStatus, u.oauthError)
-                          : null}
-                      </div>
-                      {needsOauthConnect(u) ? (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-xs"
-                          disabled={oauthBusyId === u.id}
-                          onClick={() => void startOauthFlow(u.id)}
-                        >
-                          {oauthBusyId === u.id ? "Connecting…" : "Connect"}
-                        </button>
-                      ) : null}
-                      {isOauthConnected(u) ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs"
-                          disabled={oauthBusyId === u.id}
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `Disconnect OAuth for “${u.name}”?`,
-                              )
-                            ) {
-                              void disconnectOauth(u.id);
-                            }
-                          }}
-                        >
-                          {oauthBusyId === u.id
-                            ? "Disconnecting…"
-                            : "Disconnect"}
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="col-num">{u.toolCount ?? "—"}</td>
-                  <td className="col-enabled">
-                    <Toggle
-                      checked={u.enabled}
-                      aria-label={`Enable ${u.name}`}
-                      disabled={toggleMutation.isPending || !manageable}
-                      onChange={(enabled) =>
-                        toggleMutation.mutate({ id: u.id, enabled })
-                      }
-                    />
-                  </td>
-                  <td className="col-actions">
-                    <div className="row-actions">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => openEdit(u)}
-                      >
-                        {manageable ? "Edit" : "View"}
-                      </button>
-                      {manageable ? (
-                        <>
-                          {me?.capabilities.canManageSharedMcps ? (
+          <div className="table-wrap">
+            <table className="data-table mcp-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Slug</th>
+                  <th>Transport</th>
+                  <th>Status</th>
+                  <th className="col-num">Tools</th>
+                  <th className="col-enabled">Enabled</th>
+                  <th className="col-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedUpstreams.map((u) => {
+                  const manageable = me ? canManageUpstream(u, me) : false;
+                  const actions = manageActions(u);
+                  const menuItems: MenuItem[] = actions.map((action) => ({
+                    id: action.id,
+                    label: action.label,
+                    danger: action.danger,
+                    disabled: action.disabled,
+                    onSelect: action.run,
+                  }));
+                  return (
+                    <tr
+                      key={u.id}
+                      className="mcp-row-clickable"
+                      tabIndex={0}
+                      aria-label={`Open ${u.name}`}
+                      onClick={() => openDetail(u)}
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return;
+                        if (event.key === "Enter") openDetail(u);
+                      }}
+                    >
+                      <td className="cell-name">
+                        <div className="badge-group">
+                          {u.name}
+                          {visibilityBadge(u.visibility)}
+                        </div>
+                      </td>
+                      <td>
+                        <code className="cell-slug">{u.slug}</code>
+                      </td>
+                      <td>
+                        <div className="badge-group">
+                          <span className="badge badge-muted">{u.transport}</span>
+                          {u.gitUrl ? (
+                            <span className="badge badge-muted">git</span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="status-cell">
+                          <div className="badge-group">
+                            {statusBadge(u.status)}
+                            {u.authMode === "oauth"
+                              ? oauthBadge(u.oauthStatus, u.oauthError)
+                              : null}
+                          </div>
+                          {needsOauthConnect(u) ? (
                             <button
                               type="button"
-                              className="btn btn-ghost btn-sm"
-                              disabled={shareBusyId === u.id}
-                              onClick={() => void openShare(u)}
+                              className="btn btn-primary btn-xs"
+                              disabled={oauthBusyId === u.id}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void startOauthFlow(u.id);
+                              }}
                             >
-                              {shareBusyId === u.id ? "Sharing…" : "Share"}
+                              {oauthBusyId === u.id ? "Connecting…" : "Connect"}
                             </button>
                           ) : null}
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            disabled={discoverMutation.isPending}
-                            onClick={() => discoverMutation.mutate(u.id)}
-                          >
-                            Rediscover
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            disabled={deleteMutation.isPending}
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  `Delete MCP “${u.name}”? This cannot be undone.`,
-                                )
-                              ) {
-                                deleteMutation.mutate(u.id);
-                              }
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <Pagination
-          total={mcpTotal}
-          page={mcpPage}
-          onPageChange={setMcpPage}
-        />
+                        </div>
+                      </td>
+                      <td className="col-num">{u.toolCount ?? "—"}</td>
+                      <td
+                        className="col-enabled"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <Toggle
+                          checked={u.enabled}
+                          aria-label={`Enable ${u.name}`}
+                          disabled={toggleMutation.isPending || !manageable}
+                          onChange={(enabled) =>
+                            toggleMutation.mutate({
+                              id: u.id,
+                              enabled,
+                              name: u.name,
+                            })
+                          }
+                        />
+                      </td>
+                      <td
+                        className="col-actions"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {menuItems.length > 0 ? (
+                          <Menu label="More" items={menuItems} align="end" />
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            total={mcpTotal}
+            page={mcpPage}
+            onPageChange={setMcpPage}
+          />
         </>
       ) : null}
 
-      {modal === "create" ? (
-        <Modal title="Add MCP" onClose={() => setModal(null)}>
+      {surface.kind === "create" ? (
+        <Drawer title="Add MCP" wide onClose={closeSurface}>
           <UpstreamForm
             error={formError}
             submitting={createMutation.isPending}
-            onCancel={() => setModal(null)}
+            onCancel={closeSurface}
             onSubmit={(body) => createMutation.mutate(body as CreateUpstream)}
           />
-        </Modal>
+        </Drawer>
       ) : null}
 
-      {modal && modal !== "create" ? (
-        <Modal
-          title={
-            me && canManageUpstream(modal, me)
-              ? `Edit ${modal.name}`
-              : modal.name
-          }
-          onClose={() => setModal(null)}
-        >
+      {editing ? (
+        <Drawer title={`Edit ${editing.name}`} wide onClose={closeSurface}>
           <UpstreamForm
-            initial={modal}
+            key={editing.id}
+            initial={editing}
             error={formError}
             submitting={updateMutation.isPending}
-            readOnly={Boolean(me && !canManageUpstream(modal, me))}
-            onCancel={() => setModal(null)}
+            readOnly={Boolean(me && !canManageUpstream(editing, me))}
+            onCancel={closeSurface}
             onSubmit={(body) =>
-              updateMutation.mutate({ id: modal.id, body })
+              updateMutation.mutate({ id: editing.id, body })
             }
           />
-        </Modal>
+        </Drawer>
       ) : null}
 
-      {grantsFor ? (
-        <Modal
-          title={`Share ${grantsFor.name}`}
-          onClose={() => setGrantsFor(null)}
+      {detail ? (
+        <Drawer
+          title={detail.name}
+          onClose={closeSurface}
+          footer={
+            detailActions.length > 0 ? (
+              <>
+                {detailActions.map((action) => (
+                  <button
+                    key={action.id}
+                    type="button"
+                    className={
+                      action.danger ? "btn btn-danger btn-sm" : "btn btn-ghost btn-sm"
+                    }
+                    disabled={action.disabled}
+                    onClick={action.run}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </>
+            ) : undefined
+          }
         >
+          <div className="mcp-detail-grid">
+            <DetailRow label="Name">{detail.name}</DetailRow>
+            <DetailRow label="Slug">
+              <code>{detail.slug}</code>
+            </DetailRow>
+            <DetailRow label="Transport">
+              <div className="badge-group">
+                <span className="badge badge-muted">{detail.transport}</span>
+                {detail.gitUrl ? (
+                  <span className="badge badge-muted">git</span>
+                ) : null}
+              </div>
+            </DetailRow>
+            <DetailRow label="Status">{statusBadge(detail.status)}</DetailRow>
+            <DetailRow label="OAuth">
+              {detail.authMode === "oauth" ? (
+                <div className="row-actions">
+                  {oauthBadge(detail.oauthStatus, detail.oauthError)}
+                  {needsOauthConnect(detail) ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={oauthBusyId === detail.id}
+                      onClick={() => void startOauthFlow(detail.id)}
+                    >
+                      {oauthBusyId === detail.id ? "Connecting…" : "Connect"}
+                    </button>
+                  ) : null}
+                  {isOauthConnected(detail) ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={oauthBusyId === detail.id}
+                      onClick={() => askDisconnect(detail)}
+                    >
+                      {oauthBusyId === detail.id
+                        ? "Disconnecting…"
+                        : "Disconnect"}
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                "Not used"
+              )}
+            </DetailRow>
+            <DetailRow label="Tools">{detail.toolCount ?? "—"}</DetailRow>
+            <DetailRow label="Visibility">
+              {visibilityBadge(detail.visibility)}
+            </DetailRow>
+          </div>
+        </Drawer>
+      ) : null}
+
+      {sharing ? (
+        <Modal title={`Share ${sharing.name}`} onClose={closeSurface}>
           <UpstreamGrantsPanel
-            upstream={grantsFor}
-            onClose={() => setGrantsFor(null)}
+            upstream={sharing}
+            onClose={closeSurface}
             onUnshared={() => {
-              setGrantsFor(null);
+              closeSurface();
               invalidate();
             }}
           />
         </Modal>
       ) : null}
+
+      <ConfirmDialog intent={confirm} onDismiss={() => setConfirm(null)} />
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mcp-detail-row">
+      <span className="mcp-detail-label">{label}</span>
+      <div className="mcp-detail-value">{children}</div>
     </div>
   );
 }

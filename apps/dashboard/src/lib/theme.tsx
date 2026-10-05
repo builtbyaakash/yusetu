@@ -5,6 +5,8 @@ export type ResolvedTheme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "yusetu.theme";
 
+const CYCLE: ThemePreference[] = ["system", "light", "dark"];
+
 function systemTheme(): ResolvedTheme {
   return window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
@@ -47,33 +49,42 @@ export function setThemePreference(preference: ThemePreference): ResolvedTheme {
   return resolved;
 }
 
-export function toggleTheme(): ResolvedTheme {
-  const next: ResolvedTheme =
-    resolveTheme(readPreference()) === "dark" ? "light" : "dark";
-  return setThemePreference(next);
+/** Cycle system → light → dark → system so system is never abandoned. */
+export function cycleThemePreference(): ThemePreference {
+  const current = readPreference();
+  const idx = CYCLE.indexOf(current);
+  const next = CYCLE[(idx + 1) % CYCLE.length] ?? "system";
+  setThemePreference(next);
+  return next;
+}
+
+function preferenceLabel(preference: ThemePreference): string {
+  if (preference === "system") return "System";
+  if (preference === "light") return "Light";
+  return "Dark";
 }
 
 export function ThemeToggle({ className = "" }: { className?: string }) {
-  const [resolved, setResolved] = useState<ResolvedTheme>(() =>
-    typeof document !== "undefined"
-      ? resolveTheme(readPreference())
-      : "light",
+  const [preference, setPreference] = useState<ThemePreference>(() =>
+    typeof document !== "undefined" ? readPreference() : "system",
   );
 
   useEffect(() => {
-    setResolved(applyThemeFromStorage());
+    applyThemeFromStorage();
+    setPreference(readPreference());
 
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onSystemChange = () => {
       if (readPreference() === "system") {
-        setResolved(applyThemeFromStorage());
+        applyThemeFromStorage();
       }
     };
     media.addEventListener("change", onSystemChange);
 
     const onStorage = (event: StorageEvent) => {
       if (event.key === THEME_STORAGE_KEY || event.key === null) {
-        setResolved(applyThemeFromStorage());
+        applyThemeFromStorage();
+        setPreference(readPreference());
       }
     };
     window.addEventListener("storage", onStorage);
@@ -84,17 +95,33 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     };
   }, []);
 
-  const nextIsLight = resolved === "dark";
+  const label = preferenceLabel(preference);
 
   return (
     <button
       type="button"
       className={`theme-toggle btn btn-ghost btn-sm ${className}`.trim()}
-      aria-label={nextIsLight ? "Switch to light theme" : "Switch to dark theme"}
-      title={nextIsLight ? "Light theme" : "Dark theme"}
-      onClick={() => setResolved(toggleTheme())}
+      aria-label={`Theme: ${label}. Click to cycle.`}
+      title={`Theme: ${label}`}
+      onClick={() => setPreference(cycleThemePreference())}
     >
-      {nextIsLight ? (
+      {preference === "dark" ? (
+        <svg
+          className="theme-toggle-icon"
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M13.2 9.1A5.5 5.5 0 0 1 6.9 2.8 5.6 5.6 0 1 0 13.2 9.1Z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+        </svg>
+      ) : preference === "light" ? (
         <svg
           className="theme-toggle-icon"
           width="16"
@@ -126,15 +153,23 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
           fill="none"
           aria-hidden="true"
         >
-          <path
-            d="M13.2 9.1A5.5 5.5 0 0 1 6.9 2.8 5.6 5.6 0 1 0 13.2 9.1Z"
+          <rect
+            x="2.5"
+            y="3.5"
+            width="11"
+            height="9"
+            rx="1.5"
             stroke="currentColor"
             strokeWidth="1.5"
-            strokeLinejoin="round"
+          />
+          <path
+            d="M2.5 6.5h11"
+            stroke="currentColor"
+            strokeWidth="1.5"
           />
         </svg>
       )}
-      <span className="theme-toggle-label">{nextIsLight ? "Light" : "Dark"}</span>
+      <span className="theme-toggle-label">{label}</span>
     </button>
   );
 }

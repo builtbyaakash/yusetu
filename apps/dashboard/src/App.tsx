@@ -18,6 +18,7 @@ import { ApiError } from "./api/client";
 import { authApi, healthApi } from "./api";
 import type { AuthMeResponse } from "./api/types";
 import { Layout } from "./components/Layout";
+import { ToastProvider } from "./components/Toast";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { GroupsPage } from "./pages/GroupsPage";
 import { JoinPage } from "./pages/JoinPage";
@@ -236,9 +237,11 @@ function AppRoutes({
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <BootGate />
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <BootGate />
+        </BrowserRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

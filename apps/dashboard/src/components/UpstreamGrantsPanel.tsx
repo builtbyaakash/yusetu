@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { teamApi, upstreamsApi } from "../api";
 import type { Upstream, UpstreamGrant } from "../api/types";
+import { ConfirmDialog, type ConfirmIntent } from "./ConfirmDialog";
+import { EmptyState, TableSkeleton } from "./Skeleton";
 
 type GrantsPanelProps = {
   upstream: Upstream;
@@ -18,6 +20,7 @@ export function UpstreamGrantsPanel({
   const queryClient = useQueryClient();
   const [addUserId, setAddUserId] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmIntent | null>(null);
 
   const grantsQuery = useQuery({
     queryKey: ["upstreams", upstream.id, "grants"],
@@ -56,6 +59,7 @@ export function UpstreamGrantsPanel({
     mutationFn: (userId: string) =>
       upstreamsApi.revokeGrant(upstream.id, userId),
     onSuccess: () => {
+      setConfirm(null);
       setFormError(null);
       invalidate();
     },
@@ -69,6 +73,7 @@ export function UpstreamGrantsPanel({
   const unshareMutation = useMutation({
     mutationFn: () => upstreamsApi.unshare(upstream.id),
     onSuccess: (updated) => {
+      setConfirm(null);
       setFormError(null);
       invalidate();
       onUnshared?.(updated);
@@ -109,10 +114,13 @@ export function UpstreamGrantsPanel({
         </div>
       ) : null}
 
-      {grantsQuery.isLoading ? <div className="empty">Loading grants…</div> : null}
+      {grantsQuery.isLoading ? <TableSkeleton rows={3} cols={2} /> : null}
 
       {(grantsQuery.data?.length ?? 0) === 0 && !grantsQuery.isLoading ? (
-        <div className="empty">No member grants yet.</div>
+        <EmptyState
+          title="No member grants yet"
+          body="Add a member below. Owners and admins already have access."
+        />
       ) : null}
 
       {(grantsQuery.data?.length ?? 0) > 0 ? (
@@ -124,15 +132,15 @@ export function UpstreamGrantsPanel({
                 type="button"
                 className="btn btn-danger btn-sm"
                 disabled={revokeMutation.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Revoke access for “${g.username}”? They will stop seeing this MCP.`,
-                    )
-                  ) {
-                    revokeMutation.mutate(g.userId);
-                  }
-                }}
+                onClick={() =>
+                  setConfirm({
+                    title: "Revoke access",
+                    message: `Revoke access for “${g.username}”? They will stop seeing this MCP.`,
+                    confirmLabel: "Revoke",
+                    danger: true,
+                    onConfirm: () => revokeMutation.mutate(g.userId),
+                  })
+                }
               >
                 Revoke
               </button>
@@ -189,19 +197,25 @@ export function UpstreamGrantsPanel({
           type="button"
           className="btn btn-danger"
           disabled={unshareMutation.isPending}
-          onClick={() => {
-            if (
-              window.confirm(
-                `Stop sharing “${upstream.name}”? It becomes Mine again and all member grants are removed.`,
-              )
-            ) {
-              unshareMutation.mutate();
-            }
-          }}
+          onClick={() =>
+            setConfirm({
+              title: "Stop sharing",
+              message: `Stop sharing “${upstream.name}”? It becomes Mine again and all member grants are removed.`,
+              confirmLabel: "Stop sharing",
+              danger: true,
+              onConfirm: () => unshareMutation.mutate(),
+            })
+          }
         >
           {unshareMutation.isPending ? "Stopping…" : "Stop sharing"}
         </button>
       </div>
+
+      <ConfirmDialog
+        intent={confirm}
+        onDismiss={() => setConfirm(null)}
+        busy={revokeMutation.isPending || unshareMutation.isPending}
+      />
     </div>
   );
 }

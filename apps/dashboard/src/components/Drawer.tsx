@@ -1,35 +1,42 @@
 import { useEffect, useId, useRef } from "react";
 import { useDialogLayer } from "./dialogLayer";
 
-type ModalProps = {
+type DrawerProps = {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
-  /** Wider dialog for long forms. Default is the compact modal. */
-  size?: "md" | "lg";
+  /** Optional footer actions pinned below the scroll body. */
+  footer?: React.ReactNode;
+  wide?: boolean;
 };
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Modal({ title, onClose, children, size = "md" }: ModalProps) {
+export function Drawer({
+  title,
+  onClose,
+  children,
+  footer,
+  wide = false,
+}: DrawerProps) {
   const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   useDialogLayer(onClose);
 
   useEffect(() => {
     previousFocus.current = document.activeElement as HTMLElement | null;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
+    const panel = panelRef.current;
+    if (!panel) return;
 
     const focusables = () =>
-      Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+      Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
         (el) => !el.hasAttribute("disabled") && el.tabIndex !== -1,
       );
 
     const first = focusables()[0];
-    (first ?? dialog).focus();
+    (first ?? panel).focus();
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Tab") return;
@@ -57,29 +64,30 @@ export function Modal({ title, onClose, children, size = "md" }: ModalProps) {
   }, []);
 
   return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
-      <div
-        ref={dialogRef}
-        className={size === "lg" ? "modal modal--lg" : "modal"}
+    <div className="drawer-backdrop" onClick={onClose} role="presentation">
+      <aside
+        ref={panelRef}
+        className={wide ? "drawer drawer--wide" : "drawer"}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-header">
+        <div className="drawer-header">
           <h2 id={titleId}>{title}</h2>
           <button
             type="button"
-            className="btn btn-ghost btn-sm modal-close"
+            className="btn btn-ghost btn-sm"
             onClick={onClose}
             aria-label="Close"
           >
             Close
           </button>
         </div>
-        {children}
-      </div>
+        <div className="drawer-body">{children}</div>
+        {footer ? <div className="drawer-footer">{footer}</div> : null}
+      </aside>
     </div>
   );
 }
