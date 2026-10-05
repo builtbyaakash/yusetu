@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { useDialogLayer } from "./dialogLayer";
 
 type DrawerProps = {
   title: string;
@@ -22,6 +23,7 @@ export function Drawer({
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
+  useDialogLayer(onClose);
 
   useEffect(() => {
     previousFocus.current = document.activeElement as HTMLElement | null;
@@ -37,11 +39,6 @@ export function Drawer({
     (first ?? panel).focus();
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
       if (event.key !== "Tab") return;
       const items = focusables();
       if (items.length === 0) {
@@ -64,7 +61,7 @@ export function Drawer({
       document.removeEventListener("keydown", onKeyDown);
       previousFocus.current?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="drawer-backdrop" onClick={onClose} role="presentation">

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { useDialogLayer } from "./dialogLayer";
 
 type ModalProps = {
   title: string;
@@ -15,6 +16,7 @@ export function Modal({ title, onClose, children, size = "md" }: ModalProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
+  useDialogLayer(onClose);
 
   useEffect(() => {
     previousFocus.current = document.activeElement as HTMLElement | null;
@@ -30,11 +32,6 @@ export function Modal({ title, onClose, children, size = "md" }: ModalProps) {
     (first ?? dialog).focus();
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
       if (event.key !== "Tab") return;
       const items = focusables();
       if (items.length === 0) {
@@ -57,7 +54,7 @@ export function Modal({ title, onClose, children, size = "md" }: ModalProps) {
       document.removeEventListener("keydown", onKeyDown);
       previousFocus.current?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">

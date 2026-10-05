@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { Modal } from "./Modal";
 
 export type ConfirmIntent = {
@@ -21,7 +22,9 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   if (!intent) return null;
 
-  return (
+  // Portal onto body. Drawer and modal backdrops use backdrop-filter, which
+  // would trap a nested position:fixed layer inside the parent dialog.
+  return createPortal(
     <Modal title={intent.title} onClose={onDismiss}>
       <p className="confirm-message">{intent.message}</p>
       <div className="form-actions row-actions">
@@ -42,6 +45,7 @@ export function ConfirmDialog({
           {busy ? "Working…" : (intent.confirmLabel ?? "Confirm")}
         </button>
       </div>
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }

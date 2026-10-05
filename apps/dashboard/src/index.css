@@ -1873,6 +1873,15 @@ tbody tr:hover td {
   cursor: pointer;
 }
 
+.mcp-row-clickable:hover {
+  background: var(--bg-muted);
+}
+
+.mcp-row-clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .mcp-detail-grid {
   display: grid;
   gap: 0.85rem;

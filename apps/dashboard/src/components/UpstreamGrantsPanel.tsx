@@ -4,6 +4,7 @@ import { ApiError } from "../api/client";
 import { teamApi, upstreamsApi } from "../api";
 import type { Upstream, UpstreamGrant } from "../api/types";
 import { ConfirmDialog, type ConfirmIntent } from "./ConfirmDialog";
+import { EmptyState, TableSkeleton } from "./Skeleton";
 
 type GrantsPanelProps = {
   upstream: Upstream;
@@ -113,10 +114,13 @@ export function UpstreamGrantsPanel({
         </div>
       ) : null}
 
-      {grantsQuery.isLoading ? <div className="empty">Loading grants…</div> : null}
+      {grantsQuery.isLoading ? <TableSkeleton rows={3} cols={2} /> : null}
 
       {(grantsQuery.data?.length ?? 0) === 0 && !grantsQuery.isLoading ? (
-        <div className="empty">No member grants yet.</div>
+        <EmptyState
+          title="No member grants yet"
+          body="Add a member below. Owners and admins already have access."
+        />
       ) : null}
 
       {(grantsQuery.data?.length ?? 0) > 0 ? (

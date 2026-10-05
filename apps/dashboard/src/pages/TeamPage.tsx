@@ -6,6 +6,7 @@ import { authApi, teamApi } from "../api";
 import type { CreateInviteResponse, Role, TeamInvite } from "../api/types";
 import { ConfirmDialog, type ConfirmIntent } from "../components/ConfirmDialog";
 import { Pagination, useClientPage } from "../components/Pagination";
+import { EmptyState, TableSkeleton } from "../components/Skeleton";
 
 function formatDate(value: string): string {
   try {
@@ -195,9 +196,7 @@ export function TeamPage() {
       {me?.capabilities.canInvite ? (
         <section className="page-section page-section--wide">
           <h2>Invites</h2>
-          {invitesQuery.isLoading ? (
-            <div className="empty">Loading invites…</div>
-          ) : null}
+          {invitesQuery.isLoading ? <TableSkeleton rows={4} cols={5} /> : null}
           {invitesQuery.error ? (
             <div className="alert alert-error">
               {invitesQuery.error instanceof ApiError
@@ -205,8 +204,13 @@ export function TeamPage() {
                 : "Failed to load invites."}
             </div>
           ) : null}
-          {invitesQuery.data && invitesQuery.data.length === 0 ? (
-            <div className="empty">No invites yet.</div>
+          {!invitesQuery.isLoading &&
+          invitesQuery.data &&
+          invitesQuery.data.length === 0 ? (
+            <EmptyState
+              title="No invites yet"
+              body="Create an invite link above. Each link works once and expires in seven days."
+            />
           ) : null}
           {invites.length > 0 ? (
             <>
@@ -283,15 +287,21 @@ export function TeamPage() {
       {me?.capabilities.canManageUsers ? (
         <section className="page-section page-section--wide">
           <h2>Members</h2>
-          {membersQuery.isLoading ? (
-            <div className="empty">Loading members…</div>
-          ) : null}
+          {membersQuery.isLoading ? <TableSkeleton rows={4} cols={4} /> : null}
           {membersQuery.error ? (
             <div className="alert alert-error">
               {membersQuery.error instanceof ApiError
                 ? membersQuery.error.message
                 : "Failed to load members."}
             </div>
+          ) : null}
+          {!membersQuery.isLoading &&
+          membersQuery.data &&
+          members.length === 0 ? (
+            <EmptyState
+              title="No members yet"
+              body="People show up here after they accept an invite."
+            />
           ) : null}
           {members.length > 0 ? (
             <>

@@ -265,7 +265,7 @@ export function GroupsPage() {
               </div>
             ) : null}
             {upstreamsQuery.isLoading ? (
-              <div className="empty">Loading MCPs…</div>
+              <TableSkeleton rows={3} cols={1} />
             ) : null}
             {upstreamsQuery.error ? (
               <div className="alert alert-error">
@@ -275,7 +275,10 @@ export function GroupsPage() {
               </div>
             ) : null}
             {upstreamsQuery.data && upstreamsQuery.data.length === 0 ? (
-              <div className="empty">No MCPs in your catalog yet.</div>
+              <EmptyState
+                title="No MCPs in your catalog"
+                body="Add an MCP first, then come back to put it in this group."
+              />
             ) : null}
             {upstreamsQuery.data && upstreamsQuery.data.length > 0 ? (
               <div className="field">
