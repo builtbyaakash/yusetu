@@ -167,24 +167,50 @@ export function UpstreamsPage() {
   async function startOauthFlow(id: string) {
     setOauthBusyId(id);
     setOauthAlert(null);
+    // Open synchronously under the user gesture; await would get a blank/blocked popup.
+    const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
     try {
-      const { authorizationUrl } = await upstreamsApi.startOauth(id);
-      window.open(authorizationUrl, "_blank", "noopener,noreferrer");
+      const { authorizationUrl, status } = await upstreamsApi.startOauth(id);
+      if (authorizationUrl) {
+        if (popup) {
+          popup.location.href = authorizationUrl;
+        } else {
+          window.location.assign(authorizationUrl);
+          return;
+        }
+      } else {
+        popup?.close();
+        if (status === "connected") {
+          invalidate();
+          setOauthAlert({
+            type: "success",
+            message: "OAuth already connected.",
+          });
+          setOauthBusyId(null);
+          return;
+        }
+        setOauthAlert({
+          type: "error",
+          message: "OAuth did not return an authorization URL. Try again.",
+        });
+        setOauthBusyId(null);
+        return;
+      }
       const started = Date.now();
       const poll = window.setInterval(() => {
         void (async () => {
           try {
-            const status = await upstreamsApi.oauthStatus(id);
-            if (status.connected || status.status === "error") {
+            const oauthStatus = await upstreamsApi.oauthStatus(id);
+            if (oauthStatus.connected || oauthStatus.status === "error") {
               window.clearInterval(poll);
               setOauthBusyId(null);
               invalidate();
               void queryClient.invalidateQueries({ queryKey: ["tools"] });
               setOauthAlert({
-                type: status.connected ? "success" : "error",
-                message: status.connected
+                type: oauthStatus.connected ? "success" : "error",
+                message: oauthStatus.connected
                   ? "OAuth connected. You can close the auth tab."
-                  : status.errorMessage ??
+                  : oauthStatus.errorMessage ??
                     "OAuth connection failed. Try Connect OAuth again.",
               });
             } else if (Date.now() - started > 5 * 60 * 1000) {
@@ -202,6 +228,7 @@ export function UpstreamsPage() {
         })();
       }, 2000);
     } catch (err) {
+      popup?.close();
       setOauthAlert({
         type: "error",
         message:

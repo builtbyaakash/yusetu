@@ -173,15 +173,40 @@ export function findUpstreamOauthByState(state: string) {
 export function clearUpstreamOauthTokens(upstreamId: string): void {
   // Also drop DCR client + discovery. Kept clients pin redirect_uris from the
   // old PUBLIC_ORIGIN (e.g. localhost) and Stripe rejects the new callback.
-  touchRow(upstreamId, {
+  const cleared = {
     clientInformationJson: null,
     discoveryJson: null,
     tokensJson: null,
     codeVerifier: null,
     pendingState: null,
-    status: "disconnected",
+    status: "disconnected" as const,
     errorMessage: null,
-  });
+  };
+  touchRow(upstreamId, cleared);
+  // Per-user token overlays must clear too — otherwise auth() returns AUTHORIZED
+  // with a stale user row and the dashboard opens an empty authorizationUrl.
+  const db = getDb();
+  db.update(userUpstreamOauth)
+    .set({ ...cleared, updatedAt: new Date() })
+    .where(eq(userUpstreamOauth.upstreamId, upstreamId))
+    .run();
+}
+
+/** Drop tokens only (keep DCR client) so Connect always opens the AS. */
+export function clearUpstreamOauthAccessTokens(upstreamId: string): void {
+  const cleared = {
+    tokensJson: null,
+    codeVerifier: null,
+    pendingState: null,
+    status: "disconnected" as const,
+    errorMessage: null,
+  };
+  touchRow(upstreamId, cleared);
+  getDb()
+    .update(userUpstreamOauth)
+    .set({ ...cleared, updatedAt: new Date() })
+    .where(eq(userUpstreamOauth.upstreamId, upstreamId))
+    .run();
 }
 
 export function setUpstreamOauthStatus(

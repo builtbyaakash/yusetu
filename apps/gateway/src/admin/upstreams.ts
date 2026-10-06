@@ -432,6 +432,7 @@ export function createUpstreamHandlers(
             pool.setDisabled(row.id);
             return;
           }
+          pool.clearDisabled(row.id);
           if (pool.getStatus(user.id, row.id).status === "unknown") {
             await pool.ensureStatus(user.id, row.id);
           }
@@ -465,8 +466,11 @@ export function createUpstreamHandlers(
       const user = sessionUser(c);
       if (!row.enabled) {
         pool.setDisabled(id);
-      } else if (pool.getStatus(user.id, id).status === "unknown") {
-        await pool.ensureStatus(user.id, id);
+      } else {
+        pool.clearDisabled(id);
+        if (pool.getStatus(user.id, id).status === "unknown") {
+          await pool.ensureStatus(user.id, id);
+        }
       }
       const toolCount =
         db
@@ -922,8 +926,11 @@ export function createUpstreamHandlers(
       }
 
       await pool.invalidateAllForUpstream(id);
-      if (!(data.enabled ?? row.enabled)) {
+      const willBeEnabled = data.enabled ?? row.enabled;
+      if (!willBeEnabled) {
         pool.setDisabled(id);
+      } else {
+        pool.clearDisabled(id);
       }
       rebuildSnapshotFromDb();
 

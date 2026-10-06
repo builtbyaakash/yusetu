@@ -115,6 +115,7 @@ export type Upstream = {
 
 export type UpstreamOauthStartResponse = {
   authorizationUrl: string;
+  status?: UpstreamOauthStatus | "connected";
 };
 
 export type UpstreamOauthStatusResponse = {

@@ -6,6 +6,7 @@ import { getLogger } from "../logger.js";
 import { getPublicOrigin } from "../oauth/metadata.js";
 import type { UpstreamPool } from "./pool.js";
 import {
+  clearUpstreamOauthAccessTokens,
   clearUpstreamOauthTokens,
   completeUpstreamOAuth,
   createUpstreamOAuthProvider,
@@ -65,6 +66,9 @@ export function createUpstreamOauthHandlers(
       }
 
       try {
+        // Connect is interactive. Clear access tokens so auth() cannot return
+        // AUTHORIZED with an empty URL (blank popup) from stale encrypted tokens.
+        clearUpstreamOauthAccessTokens(id);
         const { result, authorizationUrl } = await startUpstreamOAuth(
           provider,
           upstream.url,
@@ -74,7 +78,13 @@ export function createUpstreamOauthHandlers(
           await pool.invalidate(user.id, id);
           return c.json({ authorizationUrl: "", status: "connected" });
         }
-        return c.json({ authorizationUrl: authorizationUrl! });
+        if (!authorizationUrl) {
+          return c.json(
+            { error: "OAuth redirect requested but no authorization URL" },
+            502,
+          );
+        }
+        return c.json({ authorizationUrl });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setUpstreamOauthStatus(id, "error", message);

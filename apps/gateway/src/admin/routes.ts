@@ -15,6 +15,8 @@ export function createHealthHandler(pool: UpstreamPool) {
     for (const row of rows) {
       if (!row.enabled) {
         pool.setDisabled(row.id);
+      } else {
+        pool.clearDisabled(row.id);
       }
     }
 
