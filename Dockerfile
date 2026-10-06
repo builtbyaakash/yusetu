@@ -29,8 +29,11 @@ FROM node:22-bookworm-slim AS runtime
 
 WORKDIR /app
 
+# git/uvx are required for stdio + git-sourced MCPs spawned on the gateway host.
+# curl helps Coolify HTTP healthchecks and the uv installer.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates libstdc++6 \
+  && apt-get install -y --no-install-recommends ca-certificates libstdc++6 git curl \
+  && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \
   && rm -rf /var/lib/apt/lists/* \
   && corepack enable && corepack prepare pnpm@9.15.0 --activate \
   && groupadd --system yusetu \
@@ -39,7 +42,8 @@ RUN apt-get update \
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8080 \
-    YUSETU_DATA_DIR=/app/data
+    YUSETU_DATA_DIR=/app/data \
+    PATH="/usr/local/bin:${PATH}"
 
 COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=build /app/node_modules ./node_modules
