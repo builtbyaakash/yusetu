@@ -171,7 +171,11 @@ export function findUpstreamOauthByState(state: string) {
 }
 
 export function clearUpstreamOauthTokens(upstreamId: string): void {
+  // Also drop DCR client + discovery. Kept clients pin redirect_uris from the
+  // old PUBLIC_ORIGIN (e.g. localhost) and Stripe rejects the new callback.
   touchRow(upstreamId, {
+    clientInformationJson: null,
+    discoveryJson: null,
     tokensJson: null,
     codeVerifier: null,
     pendingState: null,
